@@ -23,12 +23,12 @@ from ls_compressor.core import (
     optimize_media,
     verify_archive,
 )
-from ls_compressor.core.exceptions import CompressionError, EncryptionError
 from ls_compressor.core.encryption import (
     decrypt_archive,
     is_encrypted_file,
     is_self_extracting_archive,
 )
+from ls_compressor.core.exceptions import CompressionError, EncryptionError
 from ls_compressor.core.watch import (
     WatchFolderConfig,
     WatchOperationType,

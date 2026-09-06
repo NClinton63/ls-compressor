@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
 
 from ls_compressor.core import (
     CompressionAlgorithm,
-    EncryptionError,
     MediaFormat,
     MediaOptimizationMode,
     OperationKind,

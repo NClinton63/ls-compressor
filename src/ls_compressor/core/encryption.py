@@ -163,7 +163,10 @@ def _launcher_script() -> str:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM
             from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
         except ImportError as _exc:
-            sys.exit("This archive requires the 'cryptography' package: pip install cryptography")
+            sys.exit(
+                "This archive requires the 'cryptography' package: "
+                "pip install cryptography"
+            )
 
         _HEADER = b"LSE\x01"
         _SALT_LEN = 16
@@ -189,7 +192,8 @@ def _launcher_script() -> str:
             nonce = payload[offset:offset + _NONCE_LEN]
             offset += _NONCE_LEN
             ciphertext = payload[offset:]
-            return AESGCM(_derive_key(password, salt)).decrypt(nonce, ciphertext, None), metadata
+            aesgcm = AESGCM(_derive_key(password, salt))
+            return aesgcm.decrypt(nonce, ciphertext, None), metadata
 
         def _extract(plaintext, ext, dest):
             dest = Path(dest)
@@ -198,7 +202,8 @@ def _launcher_script() -> str:
                 with zipfile.ZipFile(io.BytesIO(plaintext)) as archive:
                     archive.extractall(dest)
             elif ext in (".tar.gz", ".tar.bz2", ".tar.xz"):
-                mode = {".gz": "r:gz", ".bz2": "r:bz2", ".xz": "r:xz"}[ext.rsplit(".")[-1]]
+                mode_map = {".gz": "r:gz", ".bz2": "r:bz2", ".xz": "r:xz"}
+                mode = mode_map[ext.rsplit(".")[-1]]
                 with tarfile.open(fileobj=io.BytesIO(plaintext), mode=mode) as archive:
                     archive.extractall(dest)
             elif ext == ".gz":

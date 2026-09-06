@@ -7,12 +7,11 @@ from pathlib import Path
 import pytest
 
 from ls_compressor.core import (
-    CompressionAlgorithm,
     EncryptionError,
     compress,
     create_self_extracting_archive,
-    decrypt_archive,
     decompress,
+    decrypt_archive,
     encrypt_archive,
     extract_payload,
     is_encrypted_file,
@@ -21,7 +20,6 @@ from ls_compressor.core import (
 from ls_compressor.core.algorithms import CompressionAlgorithm as Algorithm
 from ls_compressor.core.encryption import derive_key
 from ls_compressor.core.models import CompressionRequest, DecompressionRequest
-
 
 PASSWORD = "correct horse battery staple"
 

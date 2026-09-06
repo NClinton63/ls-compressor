@@ -35,3 +35,6 @@ Thumbs.db
 
 # Generated intermediates (kept: assets/icon.* produced by scripts/generate_icons.py)
 assets/AppIcon.iconset/
+
+# Devin/agent workspace guidance
+AGENTS.md

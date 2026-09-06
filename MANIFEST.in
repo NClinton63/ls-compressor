@@ -1,0 +1,9 @@
+include README.md
+include LICENSE
+include THIRD_PARTY_NOTICES.md
+include requirements.txt
+include requirements-dev.txt
+recursive-include assets *
+include src/ls_compressor/gui/theme.qss
+recursive-include packaging *.py *.spec *.txt
+recursive-include scripts *.py

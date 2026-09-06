@@ -1,0 +1,1 @@
+"""LS Compressor test suite."""

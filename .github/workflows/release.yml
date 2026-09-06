@@ -1,0 +1,114 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  tags:
+    - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        python-version: ["3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pinned build dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt -e .
+
+      - name: Run black check
+        shell: bash
+        run: black --check src tests scripts packaging
+
+      - name: Run ruff check
+        shell: bash
+        run: ruff check src tests scripts packaging
+
+      - name: Validate PyInstaller spec syntax
+        shell: bash
+        run: python -c "import compileall, sys; sys.exit(0 if compileall.compile_file('packaging/ls-compressor.spec', doraise=True) else 1)"
+
+      - name: Run tests offscreen
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest
+
+      - name: Build PyInstaller bundle
+        shell: bash
+        run: python -m PyInstaller packaging/ls-compressor.spec --noconfirm --clean
+
+      - name: Package macOS .app
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          ditto -c -k --sequesterRsrc \
+            "dist/LS Compressor.app" \
+            "dist/ls-compressor-macos.zip"
+
+      - name: Package Windows executable
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          python -m zipfile -c \
+            "dist/ls-compressor-windows.zip" \
+            "dist/ls-compressor.exe"
+
+      - name: Package Linux executable
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          tar -czf "dist/ls-compressor-linux.tar.gz" \
+            -C dist ls-compressor
+
+      - name: Upload platform artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ls-compressor-${{ matrix.os }}
+          path: |
+            dist/ls-compressor-*.zip
+            dist/ls-compressor-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: ls-compressor-*
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

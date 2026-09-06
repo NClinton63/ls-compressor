@@ -46,7 +46,7 @@ jobs:
 
       - name: Validate PyInstaller spec syntax
         shell: bash
-        run: python -c "import compileall, sys; sys.exit(0 if compileall.compile_file('packaging/ls-compressor.spec', doraise=True) else 1)"
+        run: python -m py_compile packaging/ls-compressor.spec
 
       - name: Run tests offscreen
         shell: bash

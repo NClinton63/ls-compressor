@@ -219,7 +219,10 @@ def _launcher_script() -> str:
 
         def main():
             payload = base64.b64decode(__PAYLOAD_DATA__)
-            password = getpass.getpass("Archive password: ")
+            if sys.stdin.isatty():
+                password = getpass.getpass("Archive password: ")
+            else:
+                password = input("Archive password: ").strip()
             try:
                 plaintext, metadata = _decrypt(payload, password)
             except Exception as exc:

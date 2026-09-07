@@ -75,7 +75,7 @@ jobs:
         if: matrix.os == 'macos-latest'
         shell: bash
         run: |
-          ditto -c -k --sequesterRsrc \
+          ditto -c -k --sequesterRsrc --keepParent \
             "dist/LS Compressor.app" \
             "dist/ls-compressor-macos.zip"
 

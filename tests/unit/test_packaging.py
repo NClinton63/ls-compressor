@@ -74,6 +74,12 @@ def test_pyinstaller_spec_compiles():
     assert compileall.compile_file(str(spec_path))
 
 
+def test_macos_release_zip_preserves_app_bundle():
+    """The macOS release ZIP must retain LS Compressor.app as its root."""
+    workflow = (_repo_root() / ".github" / "workflows" / "release.yml").read_text()
+    assert "ditto -c -k --sequesterRsrc --keepParent" in workflow
+
+
 def test_generate_icons_script_is_importable():
     """The icon-generation script must load without import errors."""
     script = _repo_root() / "scripts" / "generate_icons.py"

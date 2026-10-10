@@ -29,7 +29,11 @@ from ls_compressor.core.encryption import (
     is_encrypted_file,
     is_self_extracting_archive,
 )
-from ls_compressor.core.exceptions import CompressionError, EncryptionError
+from ls_compressor.core.exceptions import (
+    CompressionError,
+    EncryptionError,
+    InvalidRequestError,
+)
 from ls_compressor.core.watch import (
     WatchFolderConfig,
     WatchOperationType,
@@ -59,9 +63,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    compress_parser = subparsers.add_parser("compress", help="create an archive")
-    compress_parser.add_argument("source", type=Path)
-    compress_parser.add_argument("destination", type=Path)
+    compress_parser = subparsers.add_parser(
+        "compress",
+        help="create an archive from one or more sources "
+        "(last argument is the destination)",
+    )
+    compress_parser.add_argument(
+        "paths",
+        type=Path,
+        nargs="+",
+        metavar="PATH",
+        help="one or more sources followed by the destination",
+    )
     compress_parser.add_argument(
         "--algorithm",
         "-a",
@@ -333,10 +346,15 @@ def _run(args: argparse.Namespace) -> None:
         return
 
     if args.command == "compress":
+        if len(args.paths) < 2:
+            raise InvalidRequestError(
+                "compress requires at least one source and a destination"
+            )
+        sources = args.paths[:-1]
         result = compress(
             CompressionRequest(
-                source=args.source,
-                destination=args.destination,
+                source=sources[0],
+                destination=args.paths[-1],
                 algorithm=CompressionAlgorithm(args.algorithm),
                 compression_level=args.level,
                 overwrite=args.force,
@@ -344,6 +362,7 @@ def _run(args: argparse.Namespace) -> None:
                 password=args.password,
                 self_extracting=args.self_extracting,
                 encryption_format=EncryptionFormat(args.encryption),
+                extra_sources=tuple(sources[1:]),
             ),
             callback,
         )

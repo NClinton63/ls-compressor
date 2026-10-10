@@ -56,6 +56,12 @@ cli/ ─┼─> core/          (domain logic: compression, media, encryption, wa
   zstandard` on machines without it).
 - Folder sources are automatically tar-bundled for stream formats
   (Zstd/XZ/GZIP/BZ2); ZIP archives directories natively.
+- **Multi-source archives**: `CompressionRequest.extra_sources` (or multiple
+  `SRC` arguments before `DEST` in the CLI) packs several files/folders into
+  one container. Each source becomes a top-level member named after itself;
+  sources must have unique names. Stream algorithms automatically switch to
+  their tar container for multi-source input. The GUI "Single archive"
+  checkbox merges all queued rows into one job.
 - Selectable compression level (0–9); a sensible per-algorithm default is used
   when omitted.
 - `overwrite` protection: operations refuse to clobber an existing destination

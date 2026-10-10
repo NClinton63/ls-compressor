@@ -240,6 +240,7 @@ Entry point: `ls-compressor` (also `python -m ls_compressor`). Global flags:
 | `compress SRC DEST` | Create an archive. Flags: `-a/--algorithm`, `-l/--level`, `-p/--password`, `--self-extracting`, `-f/--force`, `--no-verify`, `-q/--quiet` |
 | `decompress SRC DEST` | Extract an archive (incl. encrypted). Flags: `-p`, `-f`, `--no-verify`, `-q` |
 | `verify SRC` | Validate archive integrity; handles encrypted inputs with `-p` |
+| `list`/`ls SRC` | List archive members and sizes without extracting; handles encrypted and self-extracting inputs with `-p` |
 | `media SRC DEST` | Optimize image/video. Flags: `--mode lossless|lossy`, `--quality`, `--video-preset`, `--video-crf`, `-f`, `-q` |
 | `watch FOLDER -o OUT` | Foreground hot-folder watcher. Flags: `--operation`, `-a`, `-l`, `--media-mode`, `-p`, `--self-extracting`, `--recursive/--no-recursive`, `-q` |
 

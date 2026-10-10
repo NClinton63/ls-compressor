@@ -21,6 +21,8 @@ from ls_compressor.core import (
     OperationResult,
     compress,
     decompress,
+    format_listing,
+    list_archive,
     optimize_media,
     verify_archive,
 )
@@ -116,6 +118,14 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser = subparsers.add_parser("verify", help="verify archive integrity")
     verify_parser.add_argument("source", type=Path)
     verify_parser.add_argument("--password", "-p")
+
+    list_parser = subparsers.add_parser(
+        "list",
+        aliases=["ls"],
+        help="list archive contents without extracting",
+    )
+    list_parser.add_argument("source", type=Path)
+    list_parser.add_argument("--password", "-p")
 
     media_parser = subparsers.add_parser(
         "media", help="optimize a media asset (image or video)"
@@ -299,9 +309,29 @@ def _handle_watch_event(event: object, quiet: bool) -> None:
         )
 
 
+def _human_size(size: int | None) -> str:
+    """Format a byte count as a compact human-readable string."""
+    if size is None:
+        return "-"
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024 or unit == "TiB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024
+    return f"{value:.1f} TiB"
+
+
 def _run(args: argparse.Namespace) -> None:
     """Execute a parsed command or raise a user-safe core exception."""
     _LOGGER.info("Operation started command=%s", args.command)
+    if args.command in {"list", "ls"}:
+        algorithm, entries = list_archive(args.source, password=args.password)
+        files = [entry for entry in entries if not entry.is_dir]
+        total = sum(entry.uncompressed_size or 0 for entry in files)
+        print(f"{algorithm.display_name} archive: {args.source}")
+        print(format_listing(entries, human_size=_human_size))
+        print(f"{len(files)} files, {_human_size(total)} uncompressed")
+        return
     if args.command == "verify":
         if is_encrypted_file(args.source) or is_self_extracting_archive(args.source):
             if not args.password:

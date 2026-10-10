@@ -98,6 +98,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="create a runnable self-extracting archive",
     )
+    compress_parser.add_argument(
+        "--exclude",
+        action="append",
+        metavar="PATTERN",
+        help="exclude sources matching a glob pattern (repeatable); "
+        ".lsignore files in source folders are also honored",
+    )
     _add_operation_options(compress_parser)
 
     decompress_parser = subparsers.add_parser("decompress", help="extract an archive")
@@ -363,6 +370,7 @@ def _run(args: argparse.Namespace) -> None:
                 self_extracting=args.self_extracting,
                 encryption_format=EncryptionFormat(args.encryption),
                 extra_sources=tuple(sources[1:]),
+                exclude=tuple(args.exclude or ()),
             ),
             callback,
         )

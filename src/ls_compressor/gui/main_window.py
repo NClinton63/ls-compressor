@@ -186,6 +186,9 @@ class CompressPage(_Page):
         self._password.setPlaceholderText("Password")
         self._password.setEchoMode(QLineEdit.EchoMode.Password)
         self._password.setMaximumWidth(140)
+        self._exclude = QLineEdit(self)
+        self._exclude.setPlaceholderText("Exclude globs (*.tmp, build/)")
+        self._exclude.setMaximumWidth(170)
         self._encryption_combo = QComboBox(self)
         for fmt in EncryptionFormat:
             self._encryption_combo.addItem(fmt.display_name, fmt.value)
@@ -202,6 +205,7 @@ class CompressPage(_Page):
         self._run_button.clicked.connect(self.run_clicked.emit)
         controls.addWidget(self._algorithm_combo)
         controls.addWidget(self._password)
+        controls.addWidget(self._exclude)
         controls.addWidget(self._encryption_combo)
         controls.addWidget(self._self_extracting)
         controls.addWidget(self._single_archive)
@@ -232,6 +236,13 @@ class CompressPage(_Page):
     def combines_sources(self) -> bool:
         """Return whether queued sources should merge into one archive."""
         return self._single_archive.isChecked()
+
+    def exclude_patterns(self) -> tuple[str, ...]:
+        """Return user-entered exclusion globs split on commas."""
+        text = self._exclude.text().strip()
+        if not text:
+            return ()
+        return tuple(part.strip() for part in text.split(",") if part.strip())
 
     def _create_stats(self) -> list[StatCard]:
         return [
@@ -633,10 +644,12 @@ class MainWindow(QMainWindow):
         password: str | None = None
         self_extracting = False
         encryption_format = EncryptionFormat.LSE
+        exclude: tuple[str, ...] = ()
         if kind == GuiJobKind.COMPRESS:
             password = self._compress_page.password().strip() or None
             self_extracting = self._compress_page.is_self_extracting()
             encryption_format = self._compress_page.selected_encryption_format()
+            exclude = self._compress_page.exclude_patterns()
             if self_extracting and not password:
                 dialog = QMessageBox(self)
                 dialog.setIcon(QMessageBox.Icon.Warning)
@@ -712,6 +725,7 @@ class MainWindow(QMainWindow):
                 password=password,
                 self_extracting=self_extracting,
                 encryption_format=encryption_format,
+                exclude=exclude,
             )
             table.convert_row_to_job(row, job_id, kind, destination, algorithm)
 
@@ -750,6 +764,7 @@ class MainWindow(QMainWindow):
             self_extracting=self_extracting,
             encryption_format=encryption_format,
             extra_sources=tuple(sources[1:]),
+            exclude=self._compress_page.exclude_patterns(),
         )
         table.convert_row_to_job(
             rows_to_queue[0][0], job_id, GuiJobKind.COMPRESS, destination, algorithm

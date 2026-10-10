@@ -69,6 +69,7 @@ class JobQueue(QObject):
         self_extracting: bool = False,
         encryption_format: EncryptionFormat = EncryptionFormat.LSE,
         extra_sources: tuple[Path, ...] = (),
+        exclude: tuple[str, ...] = (),
     ) -> UUID:
         """Create a pending job and enqueue it for sequential execution."""
         job_id = uuid4()
@@ -89,6 +90,7 @@ class JobQueue(QObject):
             self_extracting=self_extracting,
             encryption_format=encryption_format,
             extra_sources=extra_sources,
+            exclude=exclude,
         )
         self._jobs[job_id] = job
         self._order.append(job_id)
@@ -131,6 +133,7 @@ class JobQueue(QObject):
             self_extracting=job.self_extracting,
             encryption_format=job.encryption_format,
             extra_sources=job.extra_sources,
+            exclude=job.exclude,
         )
         worker.signals.started.connect(self._on_started)
         worker.signals.progress.connect(self._on_progress)

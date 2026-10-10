@@ -1,9 +1,10 @@
 """Filesystem helpers for safe archive operations."""
 
 import errno
+import fnmatch
 import os
 import shutil
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import BinaryIO
 
@@ -25,6 +26,56 @@ def iter_files(source: Path) -> Iterator[Path]:
     for path in sorted(source.rglob("*")):
         if path.is_file() and not path.is_symlink():
             yield path
+
+
+IGNORE_FILE = ".lsignore"
+
+
+def load_ignore_patterns(source: Path) -> tuple[str, ...]:
+    """Read exclusion patterns from ``source/.lsignore`` when present."""
+    if source.is_dir():
+        ignore_file = source / IGNORE_FILE
+    elif source.is_file():
+        ignore_file = source.parent / IGNORE_FILE
+    else:
+        return ()
+    if not ignore_file.is_file():
+        return ()
+    patterns = []
+    try:
+        for line in ignore_file.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                patterns.append(stripped)
+    except OSError:
+        return ()
+    return tuple(patterns)
+
+
+def is_excluded(rel_posix: str, patterns: Iterable[str]) -> bool:
+    """Return True when a source-relative path matches an exclusion pattern.
+
+    Patterns follow gitignore-lite rules:
+
+    - ``*.log`` matches the basename at any depth.
+    - ``build`` or ``build/`` matches the entry itself and everything below it.
+    - ``dir/*.tmp`` matches relative to the source root only.
+    """
+    for pattern in patterns:
+        pat = pattern.rstrip("/")
+        if not pat:
+            continue
+        if "/" in pat:
+            if (
+                fnmatch.fnmatch(rel_posix, pat)
+                or rel_posix == pat
+                or rel_posix.startswith(pat + "/")
+            ):
+                return True
+            continue
+        if any(fnmatch.fnmatch(part, pat) for part in rel_posix.split("/")):
+            return True
+    return False
 
 
 def source_size(source: Path) -> int:

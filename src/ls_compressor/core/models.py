@@ -48,6 +48,7 @@ class CompressionRequest:
     self_extracting: bool = False
     encryption_format: EncryptionFormat = EncryptionFormat.LSE
     extra_sources: tuple[Path, ...] = ()
+    exclude: tuple[str, ...] = ()
 
     @property
     def all_sources(self) -> tuple[Path, ...]:

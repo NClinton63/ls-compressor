@@ -76,3 +76,18 @@ def test_empty_operation_result_has_defined_ratio() -> None:
 
     assert result.compression_ratio == 0.0
     assert result.space_savings_percentage == 0.0
+
+
+def test_filesystem_ignore_pattern_matching(tmp_path: Path) -> None:
+    """Gitignore-lite patterns match basenames, dirs, and rooted globs."""
+    from ls_compressor.core.filesystem import is_excluded, load_ignore_patterns
+
+    assert is_excluded("src/app.pyc", ("*.pyc",))
+    assert is_excluded("build/out.o", ("build",))
+    assert is_excluded("build/deep/out.o", ("build/",))
+    assert is_excluded("src/tmp/x.log", ("src/tmp/*",))
+    assert not is_excluded("src/app.py", ("*.pyc", "build"))
+
+    (tmp_path / ".lsignore").write_text("# c\n*.log\n\n", "utf-8")
+    assert load_ignore_patterns(tmp_path) == ("*.log",)
+    assert load_ignore_patterns(tmp_path / "missing") == ()

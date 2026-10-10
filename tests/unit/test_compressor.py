@@ -288,3 +288,63 @@ def test_multi_source_encrypted_roundtrip(tmp_path: Path) -> None:
 
     assert (restored / "a.txt").read_text() == "alpha"
     assert (restored / "docs" / "b.txt").read_text() == "beta"
+
+
+def test_exclude_patterns_skip_matching_members(tmp_path: Path) -> None:
+    """--exclude globs drop matching files and directories from the archive."""
+    source = tmp_path / "proj"
+    (source / "build").mkdir(parents=True)
+    (source / "src").mkdir()
+    (source / "src" / "app.py").write_text("code")
+    (source / "src" / "app.pyc").write_text("bytecode")
+    (source / "build" / "out.o").write_text("obj")
+    archive = tmp_path / "out.zip"
+    restored = tmp_path / "restored"
+
+    compress(
+        CompressionRequest(
+            source,
+            archive,
+            CompressionAlgorithm.ZIP,
+            exclude=("*.pyc", "build"),
+        )
+    )
+    decompress(DecompressionRequest(archive, restored))
+
+    assert (restored / "proj" / "src" / "app.py").exists()
+    assert not (restored / "proj" / "src" / "app.pyc").exists()
+    assert not (restored / "proj" / "build" / "out.o").exists()
+
+
+def test_lsignore_file_excludes_members(tmp_path: Path) -> None:
+    """A .lsignore file in the source directory filters archive members."""
+    source = tmp_path / "proj"
+    (source / "logs").mkdir(parents=True)
+    (source / "keep.txt").write_text("keep")
+    (source / "logs" / "debug.log").write_text("noise")
+    (source / ".lsignore").write_text("# comment\nlogs/\n*.tmp\n", "utf-8")
+    archive = tmp_path / "out.zip"
+    restored = tmp_path / "restored"
+
+    compress(CompressionRequest(source, archive, CompressionAlgorithm.ZIP))
+    decompress(DecompressionRequest(archive, restored))
+
+    assert (restored / "proj" / "keep.txt").exists()
+    assert (restored / "proj" / ".lsignore").exists()
+    assert not (restored / "proj" / "logs" / "debug.log").exists()
+
+
+def test_exclude_all_members_rejected(tmp_path: Path) -> None:
+    """A request that excludes every member fails clearly."""
+    source = tmp_path / "only.txt"
+    source.write_text("data")
+
+    with pytest.raises(InvalidRequestError, match="excluded"):
+        compress(
+            CompressionRequest(
+                source,
+                tmp_path / "out.zip",
+                CompressionAlgorithm.ZIP,
+                exclude=("*.txt",),
+            )
+        )

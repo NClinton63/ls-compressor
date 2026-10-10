@@ -16,6 +16,37 @@ class OperationKind(StrEnum):
     MEDIA_OPTIMIZE = "media_optimize"
 
 
+class CompressionPreset(StrEnum):
+    """Named algorithm/level bundles for common speed-size trade-offs."""
+
+    FAST = "fast"
+    BALANCED = "balanced"
+    MAXIMUM = "maximum"
+
+    @property
+    def algorithm(self) -> CompressionAlgorithm:
+        """Return the algorithm selected by this preset."""
+        return {
+            self.FAST: CompressionAlgorithm.ZSTD,
+            self.BALANCED: CompressionAlgorithm.ZSTD,
+            self.MAXIMUM: CompressionAlgorithm.XZ,
+        }[self]
+
+    @property
+    def level(self) -> int:
+        """Return the compression level selected by this preset."""
+        return {self.FAST: 1, self.BALANCED: 3, self.MAXIMUM: 9}[self]
+
+    @property
+    def display_name(self) -> str:
+        """Return the human-readable preset name."""
+        return {
+            self.FAST: "Fast",
+            self.BALANCED: "Balanced",
+            self.MAXIMUM: "Maximum",
+        }[self]
+
+
 class EncryptionFormat(StrEnum):
     """Encryption containers available for password-protected archives."""
 
@@ -48,6 +79,7 @@ class CompressionRequest:
     self_extracting: bool = False
     encryption_format: EncryptionFormat = EncryptionFormat.LSE
     extra_sources: tuple[Path, ...] = ()
+    exclude: tuple[str, ...] = ()
 
     @property
     def all_sources(self) -> tuple[Path, ...]:

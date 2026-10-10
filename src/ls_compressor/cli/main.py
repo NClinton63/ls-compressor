@@ -11,6 +11,7 @@ from pathlib import Path
 from ls_compressor import __version__
 from ls_compressor.core import (
     CompressionAlgorithm,
+    CompressionPreset,
     CompressionRequest,
     DecompressionRequest,
     EncryptionFormat,
@@ -86,6 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=CompressionAlgorithm.ZSTD.value,
     )
     compress_parser.add_argument("--level", "-l", type=int)
+    compress_parser.add_argument(
+        "--preset",
+        choices=[preset.value for preset in CompressionPreset],
+        help="named speed/ratio bundle; overrides --algorithm and --level",
+    )
     compress_parser.add_argument("--password", "-p")
     compress_parser.add_argument(
         "--encryption",
@@ -97,6 +103,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--self-extracting",
         action="store_true",
         help="create a runnable self-extracting archive",
+    )
+    compress_parser.add_argument(
+        "--exclude",
+        action="append",
+        metavar="PATTERN",
+        help="exclude sources matching a glob pattern (repeatable); "
+        ".lsignore files in source folders are also honored",
     )
     _add_operation_options(compress_parser)
 
@@ -351,18 +364,22 @@ def _run(args: argparse.Namespace) -> None:
                 "compress requires at least one source and a destination"
             )
         sources = args.paths[:-1]
+        preset = CompressionPreset(args.preset) if args.preset else None
         result = compress(
             CompressionRequest(
                 source=sources[0],
                 destination=args.paths[-1],
-                algorithm=CompressionAlgorithm(args.algorithm),
-                compression_level=args.level,
+                algorithm=(
+                    preset.algorithm if preset else CompressionAlgorithm(args.algorithm)
+                ),
+                compression_level=preset.level if preset else args.level,
                 overwrite=args.force,
                 verify=not args.no_verify,
                 password=args.password,
                 self_extracting=args.self_extracting,
                 encryption_format=EncryptionFormat(args.encryption),
                 extra_sources=tuple(sources[1:]),
+                exclude=tuple(args.exclude or ()),
             ),
             callback,
         )

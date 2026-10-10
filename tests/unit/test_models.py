@@ -76,3 +76,34 @@ def test_empty_operation_result_has_defined_ratio() -> None:
 
     assert result.compression_ratio == 0.0
     assert result.space_savings_percentage == 0.0
+
+
+def test_filesystem_ignore_pattern_matching(tmp_path: Path) -> None:
+    """Gitignore-lite patterns match basenames, dirs, and rooted globs."""
+    from ls_compressor.core.filesystem import is_excluded, load_ignore_patterns
+
+    assert is_excluded("src/app.pyc", ("*.pyc",))
+    assert is_excluded("build/out.o", ("build",))
+    assert is_excluded("build/deep/out.o", ("build/",))
+    assert is_excluded("src/tmp/x.log", ("src/tmp/*",))
+    assert not is_excluded("src/app.py", ("*.pyc", "build"))
+
+    (tmp_path / ".lsignore").write_text("# c\n*.log\n\n", "utf-8")
+    assert load_ignore_patterns(tmp_path) == ("*.log",)
+    assert load_ignore_patterns(tmp_path / "missing") == ()
+
+
+def test_compression_presets_resolve_algorithm_and_level() -> None:
+    """Each preset maps to a valid write-capable algorithm and level."""
+    from ls_compressor.core.models import CompressionPreset
+
+    assert CompressionPreset.FAST.algorithm is CompressionAlgorithm.ZSTD
+    assert CompressionPreset.FAST.level == 1
+    assert CompressionPreset.BALANCED.algorithm is CompressionAlgorithm.ZSTD
+    assert CompressionPreset.BALANCED.level == 3
+    assert CompressionPreset.MAXIMUM.algorithm is CompressionAlgorithm.XZ
+    assert CompressionPreset.MAXIMUM.level == 9
+    for preset in CompressionPreset:
+        assert preset.algorithm.can_compress
+        assert 0 <= preset.level <= 9
+        assert preset.display_name

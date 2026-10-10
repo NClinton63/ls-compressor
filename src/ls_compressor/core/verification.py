@@ -22,7 +22,13 @@ from ls_compressor.core.exceptions import (
     IntegrityError,
     UnsupportedFormatError,
 )
-from ls_compressor.core.filesystem import CHUNK_SIZE, iter_files, safe_target
+from ls_compressor.core.filesystem import (
+    CHUNK_SIZE,
+    is_excluded,
+    iter_files,
+    load_ignore_patterns,
+    safe_target,
+)
 
 
 def detect_algorithm(path: Path) -> CompressionAlgorithm:
@@ -189,16 +195,22 @@ def verify_archive(path: Path, password: str | None = None) -> CompressionAlgori
     return algorithm
 
 
-def _expected_entries(sources: tuple[Path, ...]) -> dict[str, Path]:
+def _expected_entries(
+    sources: tuple[Path, ...], exclude: tuple[str, ...] = ()
+) -> dict[str, Path]:
     """Map expected archive member names to source filesystem paths."""
     entries: dict[str, Path] = {}
     for source in sources:
+        patterns = (*exclude, *load_ignore_patterns(source))
         for path in iter_files(source):
-            name = (
-                path.relative_to(source.parent).as_posix()
-                if source.is_dir()
-                else source.name
-            )
+            if source.is_dir():
+                rel = path.relative_to(source).as_posix()
+                name = path.relative_to(source.parent).as_posix()
+            else:
+                rel = source.name
+                name = source.name
+            if is_excluded(rel, patterns):
+                continue
             entries[name] = path
     return entries
 
@@ -207,21 +219,22 @@ def verify_against_source(
     source: Path | tuple[Path, ...],
     archive_path: Path,
     password: str | None = None,
+    exclude: tuple[str, ...] = (),
 ) -> None:
     """Verify archive payload bytes and names against their original sources."""
     sources = (source,) if isinstance(source, Path) else tuple(source)
     algorithm = verify_archive(archive_path, password=password)
     try:
         if algorithm is CompressionAlgorithm.ZIP:
-            _verify_zip_source(sources, archive_path, password)
+            _verify_zip_source(sources, archive_path, password, exclude)
         elif algorithm is CompressionAlgorithm.SEVENZ:
-            _verify_7z_source(sources, archive_path, password)
+            _verify_7z_source(sources, archive_path, password, exclude)
         elif algorithm is CompressionAlgorithm.ZSTD and _zstd_contains_tar(
             archive_path
         ):
-            _verify_zstd_tar_source(sources, archive_path)
+            _verify_zstd_tar_source(sources, archive_path, exclude)
         elif len(sources) > 1 or sources[0].is_dir():
-            _verify_tar_source(sources, archive_path)
+            _verify_tar_source(sources, archive_path, exclude)
         else:
             with (
                 sources[0].open("rb") as original,
@@ -244,10 +257,13 @@ def verify_against_source(
 
 
 def _verify_zip_source(
-    sources: tuple[Path, ...], archive_path: Path, password: str | None = None
+    sources: tuple[Path, ...],
+    archive_path: Path,
+    password: str | None = None,
+    exclude: tuple[str, ...] = (),
 ) -> None:
     """Compare ZIP file entries with source files."""
-    expected = _expected_entries(sources)
+    expected = _expected_entries(sources, exclude)
     with pyzipper.AESZipFile(archive_path) as archive:
         if password is not None:
             archive.setpassword(password.encode("utf-8"))
@@ -263,10 +279,13 @@ def _verify_zip_source(
 
 
 def _verify_7z_source(
-    sources: tuple[Path, ...], archive_path: Path, password: str | None
+    sources: tuple[Path, ...],
+    archive_path: Path,
+    password: str | None,
+    exclude: tuple[str, ...] = (),
 ) -> None:
     """Compare 7z archive entries with source files via a temp extraction."""
-    expected = _expected_entries(sources)
+    expected = _expected_entries(sources, exclude)
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             with py7zr.SevenZipFile(archive_path, "r", password=password) as archive:
@@ -290,9 +309,13 @@ def _verify_7z_source(
         raise CorruptedArchiveError(f"Archive is corrupted: {archive_path}") from error
 
 
-def _verify_zstd_tar_source(sources: tuple[Path, ...], archive_path: Path) -> None:
+def _verify_zstd_tar_source(
+    sources: tuple[Path, ...],
+    archive_path: Path,
+    exclude: tuple[str, ...] = (),
+) -> None:
     """Compare a Zstandard-compressed tar stream with source files."""
-    expected = _expected_entries(sources)
+    expected = _expected_entries(sources, exclude)
     actual: dict[str, bytes] = {}
     with (
         zstandard.open(archive_path, "rb") as decompressed,
@@ -312,9 +335,13 @@ def _verify_zstd_tar_source(sources: tuple[Path, ...], archive_path: Path) -> No
                 raise IntegrityError(f"Tar entry differs from source: {name}")
 
 
-def _verify_tar_source(sources: tuple[Path, ...], archive_path: Path) -> None:
+def _verify_tar_source(
+    sources: tuple[Path, ...],
+    archive_path: Path,
+    exclude: tuple[str, ...] = (),
+) -> None:
     """Compare tar archive file entries with source files."""
-    expected = _expected_entries(sources)
+    expected = _expected_entries(sources, exclude)
     with tarfile.open(archive_path, "r:*") as archive:
         actual = {member.name: member for member in archive if member.isfile()}
         if set(actual) != set(expected):

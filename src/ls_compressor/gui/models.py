@@ -51,6 +51,7 @@ class GuiJob:
     self_extracting: bool = False
     encryption_format: EncryptionFormat = EncryptionFormat.LSE
     extra_sources: tuple[Path, ...] = ()
+    exclude: tuple[str, ...] = ()
     progress_percent: float = 0.0
     current_file: Path | None = None
     result: OperationResult | None = None

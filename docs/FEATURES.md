@@ -64,6 +64,12 @@ cli/ ─┼─> core/          (domain logic: compression, media, encryption, wa
   checkbox merges all queued rows into one job.
 - Selectable compression level (0–9); a sensible per-algorithm default is used
   when omitted.
+- **Exclusions**: `CompressionRequest.exclude` (or repeatable `--exclude`
+  flags / the GUI Exclude field) drops members matching gitignore-lite globs
+  — `*.tmp` matches basenames at any depth, `build` or `build/` skips a
+  directory and its contents, `dir/*.log` anchors to the source root. A
+  `.lsignore` file inside a source folder adds the same patterns
+  automatically.
 - `overwrite` protection: operations refuse to clobber an existing destination
   unless `force`/`--force` is set.
 - Source existence/destination preparation handled centrally in

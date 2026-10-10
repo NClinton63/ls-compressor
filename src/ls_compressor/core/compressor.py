@@ -39,7 +39,8 @@ from ls_compressor.core.filesystem import (
     apply_mode,
     clear_destination,
     ensure_source,
-    iter_files,
+    is_excluded,
+    load_ignore_patterns,
     prepare_destination,
     raise_filesystem_error,
     replace_path,
@@ -122,8 +123,15 @@ def compress(
                 "Sources must have unique names to share one archive"
             )
     prepare_destination(request.destination, overwrite=request.overwrite)
-    total = sum(source_size(source) for source in sources)
-    files = [path for source in sources for path in iter_files(source)]
+    members = [
+        (path, name)
+        for _, path, name in _iter_source_members(request)
+        if path.is_file()
+    ]
+    if not members:
+        raise InvalidRequestError("All sources were excluded by ignore patterns")
+    total = sum(path.stat().st_size for path, _ in members)
+    files = [path for path, _ in members]
     temporary = _temporary_path(request.destination)
     progress = ProgressReporter(OperationKind.COMPRESS, total, callback)
 
@@ -143,7 +151,12 @@ def compress(
             else:
                 _compress_stream(request, temporary, update)
         if request.verify:
-            verify_against_source(sources, temporary, password=request.password)
+            verify_against_source(
+                sources,
+                temporary,
+                password=request.password,
+                exclude=request.exclude,
+            )
         if request.password and request.encryption_format is EncryptionFormat.LSE:
             temporary = _wrap_encrypted_output(request, temporary)
         replace_path(temporary, request.destination, overwrite=request.overwrite)
@@ -208,6 +221,23 @@ def _member_name(source: Path, path: Path) -> str:
     return source.name
 
 
+def _iter_source_members(request: CompressionRequest):
+    """Yield (source, path, member_name) for every member, honoring ignores."""
+    for source in request.all_sources:
+        patterns = (*request.exclude, *load_ignore_patterns(source))
+        if not source.is_dir():
+            if not is_excluded(source.name, patterns):
+                yield source, source, source.name
+            continue
+        for path in [source, *sorted(source.rglob("*"))]:
+            if path.is_symlink():
+                continue
+            rel = path.relative_to(source).as_posix()
+            if rel != "." and is_excluded(rel, patterns):
+                continue
+            yield source, path, _member_name(source, path)
+
+
 def _compress_zip(
     request: CompressionRequest, temporary: Path, update: Callable[[int, Path], None]
 ) -> None:
@@ -215,21 +245,18 @@ def _compress_zip(
     with zipfile.ZipFile(
         temporary, "w", compression=zipfile.ZIP_DEFLATED, **_compression_kwargs(request)
     ) as archive:
-        for source in request.all_sources:
-            if source.is_dir():
-                for directory in [source, *sorted(source.rglob("*"))]:
-                    if directory.is_dir():
-                        name = _member_name(source, directory) + "/"
-                        info = zipfile.ZipInfo(name)
-                        info.external_attr = (directory.stat().st_mode & 0xFFFF) << 16
-                        archive.writestr(info, b"")
-            for path in iter_files(source):
-                info = zipfile.ZipInfo.from_file(path, _member_name(source, path))
-                info.compress_type = zipfile.ZIP_DEFLATED
-                with path.open("rb") as src, archive.open(info, "w") as destination:
-                    while chunk := src.read(CHUNK_SIZE):
-                        destination.write(chunk)
-                        update(len(chunk), path)
+        for _, path, name in _iter_source_members(request):
+            if path.is_dir():
+                info = zipfile.ZipInfo(name + "/")
+                info.external_attr = (path.stat().st_mode & 0xFFFF) << 16
+                archive.writestr(info, b"")
+                continue
+            info = zipfile.ZipInfo.from_file(path, name)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            with path.open("rb") as src, archive.open(info, "w") as destination:
+                while chunk := src.read(CHUNK_SIZE):
+                    destination.write(chunk)
+                    update(len(chunk), path)
 
 
 def _compress_zip_aes(
@@ -243,19 +270,12 @@ def _compress_zip_aes(
         encryption=pyzipper.WZ_AES,
     ) as archive:
         archive.setpassword(request.password.encode("utf-8"))
-        for source in request.all_sources:
-            paths = (
-                [source, *sorted(source.rglob("*"))] if source.is_dir() else [source]
-            )
-            for path in paths:
-                if path.is_symlink():
-                    continue
-                name = _member_name(source, path)
-                if path.is_dir():
-                    archive.write(path, name + "/")
-                else:
-                    archive.write(path, name)
-                    update(path.stat().st_size, path)
+        for _, path, name in _iter_source_members(request):
+            if path.is_dir():
+                archive.write(path, name + "/")
+            else:
+                archive.write(path, name)
+                update(path.stat().st_size, path)
 
 
 def _compress_7z_encrypted(
@@ -265,16 +285,10 @@ def _compress_7z_encrypted(
     with py7zr.SevenZipFile(
         temporary, "w", password=request.password, header_encryption=True
     ) as archive:
-        for source in request.all_sources:
-            paths = (
-                [source, *sorted(source.rglob("*"))] if source.is_dir() else [source]
-            )
-            for path in paths:
-                if path.is_symlink():
-                    continue
-                archive.write(path, _member_name(source, path))
-                if path.is_file():
-                    update(path.stat().st_size, path)
+        for _, path, name in _iter_source_members(request):
+            archive.write(path, name)
+            if path.is_file():
+                update(path.stat().st_size, path)
 
 
 def _compress_tar(
@@ -307,20 +321,16 @@ def _add_tar_members(
     update: Callable[[int, Path], None],
 ) -> None:
     """Add every source tree to an open tar archive."""
-    for source in request.all_sources:
-        paths = [source, *sorted(source.rglob("*"))] if source.is_dir() else [source]
-        for path in paths:
-            if path.is_symlink():
-                continue
-            info = archive.gettarinfo(str(path), _member_name(source, path))
-            if path.is_file():
-                with path.open("rb") as stream:
-                    reader = ProgressReader(
-                        stream, lambda count, item=path: update(count, item)
-                    )
-                    archive.addfile(info, reader)
-            else:
-                archive.addfile(info)
+    for _, path, name in _iter_source_members(request):
+        info = archive.gettarinfo(str(path), name)
+        if path.is_file():
+            with path.open("rb") as stream:
+                reader = ProgressReader(
+                    stream, lambda count, item=path: update(count, item)
+                )
+                archive.addfile(info, reader)
+        else:
+            archive.addfile(info)
 
 
 def _compress_stream(

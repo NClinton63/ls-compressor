@@ -81,7 +81,12 @@ time, files processed, compression ratio, and space-savings percentage.
 `core/encryption.py` implements a custom encrypted container format:
 
 - **Cipher:** AES-256-GCM (authenticated encryption — tampering is detected).
-- **KDF:** PBKDF2-HMAC-SHA256, 100,000 iterations, 16-byte salt, 12-byte nonce.
+- **KDF:** Argon2id (t=3, m=64 MiB, p=2) for all new archives. The KDF
+  algorithm and its parameters are stored in the archive header metadata, so
+  work factors can be raised later without breaking existing files. Archives
+  written before v1.2 (PBKDF2-HMAC-SHA256, 100k iterations, no KDF metadata)
+  remain readable; self-extracting launchers honor the stored parameters and
+  prompt for `pip install argon2-cffi` when needed.
 - **File format:** `LSE\x01` magic + 2-byte metadata length + JSON metadata +
   salt + nonce + ciphertext. `is_encrypted_file()` detects the magic header.
 

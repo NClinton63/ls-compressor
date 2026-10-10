@@ -165,6 +165,86 @@ def test_compress_self_extracting_py(tmp_path: Path) -> None:
     assert is_self_extracting_archive(launcher)
 
 
+def test_new_archives_record_argon2id_kdf_metadata(tmp_path: Path) -> None:
+    """New encrypted archives store Argon2id parameters in the header."""
+    from ls_compressor.core.encryption import _unpack_header
+
+    archive = tmp_path / "sample.zip"
+    archive.write_bytes(b"payload")
+    encrypted = tmp_path / "sample.lsenc"
+    encrypt_archive(
+        archive, encrypted, PASSWORD, algorithm=Algorithm.ZIP, is_directory=False
+    )
+
+    metadata, _, _, _ = _unpack_header(encrypted.read_bytes())
+
+    assert metadata["kdf"]["algo"] == "argon2id"
+    assert metadata["kdf"]["time_cost"] >= 1
+    assert metadata["kdf"]["memory_cost"] >= 19_456
+
+
+def test_legacy_pbkdf2_archive_still_decrypts(tmp_path: Path) -> None:
+    """Archives written before Argon2id (no kdf metadata) remain readable."""
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from ls_compressor.core.encryption import (
+        NONCE_LEN,
+        SALT_LEN,
+        _pack_header,
+    )
+
+    payload = b"legacy payload bytes"
+    salt = os.urandom(SALT_LEN)
+    nonce = os.urandom(NONCE_LEN)
+    ciphertext = AESGCM(derive_key(PASSWORD, salt)).encrypt(nonce, payload, None)
+    legacy = tmp_path / "legacy.lsenc"
+    legacy.write_bytes(_pack_header({"ext": ".zip"}, salt, nonce) + ciphertext)
+
+    restored = tmp_path / "restored.zip"
+    decrypt_archive(legacy, restored, PASSWORD)
+
+    assert restored.read_bytes() == payload
+
+
+def test_pbkdf2_metadata_iterations_are_honored(tmp_path: Path) -> None:
+    """Stored PBKDF2 iteration counts are used for decryption."""
+    import os
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    from ls_compressor.core.encryption import (
+        NONCE_LEN,
+        SALT_LEN,
+        _pack_header,
+    )
+
+    payload = b"pbkdf2 payload"
+    salt = os.urandom(SALT_LEN)
+    nonce = os.urandom(NONCE_LEN)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(), length=32, salt=salt, iterations=250_000
+    )
+    ciphertext = AESGCM(kdf.derive(PASSWORD.encode())).encrypt(nonce, payload, None)
+    archive = tmp_path / "pbkdf2.lsenc"
+    archive.write_bytes(
+        _pack_header(
+            {"ext": ".zip", "kdf": {"algo": "pbkdf2-sha256", "iterations": 250_000}},
+            salt,
+            nonce,
+        )
+        + ciphertext
+    )
+
+    restored = tmp_path / "restored.zip"
+    decrypt_archive(archive, restored, PASSWORD)
+
+    assert restored.read_bytes() == payload
+
+
 def test_aes_zip_roundtrip_requires_password(tmp_path: Path) -> None:
     """WinZip-compatible AES archives extract only with the password."""
     source = tmp_path / "report.txt"

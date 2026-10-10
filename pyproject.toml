@@ -9,6 +9,7 @@ description = "Cross-platform lossless file compression desktop application"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "argon2-cffi==25.1.0",
     "cryptography==44.0.3",
     "imageio[ffmpeg]==2.34.2",
     "Pillow==12.3.0",

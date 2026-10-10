@@ -57,6 +57,8 @@ a = Analysis(
         "watchdog.observers",
         "zstandard",
         "zstandard.backend_cffi",
+        "argon2",
+        "argon2.low_level",
         "py7zr",
         "rarfile",
         "pyzipper",

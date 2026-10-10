@@ -18,6 +18,11 @@ from ls_compressor.core.exceptions import (
     InvalidRequestError,
     UnsupportedFormatError,
 )
+from ls_compressor.core.listing import (
+    ArchiveEntry,
+    format_listing,
+    list_archive,
+)
 from ls_compressor.core.media import (
     MediaFormat,
     MediaOptimizationMode,
@@ -43,6 +48,7 @@ from ls_compressor.core.verification import (
 )
 
 __all__ = [
+    "ArchiveEntry",
     "CompressionAlgorithm",
     "CompressionError",
     "CompressionPreset",
@@ -69,8 +75,10 @@ __all__ = [
     "detect_media_format",
     "encrypt_archive",
     "extract_payload",
+    "format_listing",
     "is_encrypted_file",
     "is_self_extracting_archive",
+    "list_archive",
     "optimize_media",
     "read_encrypted_extension",
     "self_extracting_extension",

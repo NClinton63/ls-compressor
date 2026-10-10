@@ -495,7 +495,9 @@ class MainWindow(QMainWindow):
         algorithm = (
             self._settings.last_used_algorithm or self._settings.default_algorithm
         )
-        self._compress_page.populate_algorithms(list(CompressionAlgorithm))
+        self._compress_page.populate_algorithms(
+            [a for a in CompressionAlgorithm if a.can_compress]
+        )
         self._compress_page.set_algorithm(algorithm)
         self._update_header(self._compress_page.table(), GuiJobKind.COMPRESS)
         self._update_header(self._decompress_page.table(), GuiJobKind.DECOMPRESS)

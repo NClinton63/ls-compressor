@@ -9,11 +9,14 @@ import zipfile
 from pathlib import Path
 from typing import BinaryIO
 
+import py7zr
+import rarfile
 import zstandard
 
 from ls_compressor.core.algorithms import CompressionAlgorithm
 from ls_compressor.core.exceptions import (
     CorruptedArchiveError,
+    EncryptionError,
     IntegrityError,
     UnsupportedFormatError,
 )
@@ -29,6 +32,10 @@ def detect_algorithm(path: Path) -> CompressionAlgorithm:
         raise CorruptedArchiveError(f"Cannot read archive: {path}") from error
     if signature.startswith(b"PK\x03\x04") or signature.startswith(b"PK\x05\x06"):
         return CompressionAlgorithm.ZIP
+    if signature.startswith(b"7z\xbc\xaf'\x1c"):
+        return CompressionAlgorithm.SEVENZ
+    if signature.startswith(b"Rar!\x1a\x07"):
+        return CompressionAlgorithm.RAR
     if signature.startswith(b"\x28\xb5\x2f\xfd"):
         return CompressionAlgorithm.ZSTD
     if signature.startswith(b"\xfd7zXZ\x00"):
@@ -83,9 +90,61 @@ def _verify_tar_members(archive: tarfile.TarFile) -> None:
                     _digest(stream)
 
 
-def verify_archive(path: Path) -> CompressionAlgorithm:
+def _verify_7z(path: Path, password: str | None) -> None:
+    """Validate member names and CRC-check every payload in a 7z archive."""
+    try:
+        with py7zr.SevenZipFile(path, "r", password=password) as archive:
+            if archive.needs_password() and not password:
+                raise EncryptionError("A password is required to verify this archive")
+            for name in archive.namelist():
+                safe_target(Path("."), name)
+            bad = archive.testzip()
+    except EncryptionError:
+        raise
+    except py7zr.PasswordRequired as error:
+        raise EncryptionError(
+            "A password is required to verify this archive"
+        ) from error
+    except (OSError, py7zr.exceptions.ArchiveError) as error:
+        raise CorruptedArchiveError(f"Archive is corrupted: {path}") from error
+    if bad is not None:
+        raise CorruptedArchiveError(f"Archive is corrupted: {path} ({bad})")
+
+
+def _verify_rar(path: Path, password: str | None) -> None:
+    """Validate member names and CRC-check every payload in a RAR archive."""
+    try:
+        with rarfile.RarFile(path) as archive:
+            if archive.needs_password() and not password:
+                raise EncryptionError("A password is required to verify this archive")
+            if password is not None:
+                archive.setpassword(password)
+            for info in archive.infolist():
+                safe_target(Path("."), info.filename)
+            archive.testrar()
+    except EncryptionError:
+        raise
+    except rarfile.RarCannotExec as error:
+        raise UnsupportedFormatError(
+            "RAR verification requires the 'unrar' or 'unar' tool to be installed"
+        ) from error
+    except (rarfile.PasswordRequired, rarfile.RarWrongPassword) as error:
+        raise EncryptionError(
+            "A password is required to verify this archive"
+        ) from error
+    except (OSError, rarfile.Error) as error:
+        raise CorruptedArchiveError(f"Archive is corrupted: {path}") from error
+
+
+def verify_archive(path: Path, password: str | None = None) -> CompressionAlgorithm:
     """Read every archive payload and raise when it is malformed or unsafe."""
     algorithm = detect_algorithm(path)
+    if algorithm is CompressionAlgorithm.SEVENZ:
+        _verify_7z(path, password)
+        return algorithm
+    if algorithm is CompressionAlgorithm.RAR:
+        _verify_rar(path, password)
+        return algorithm
     try:
         if algorithm is CompressionAlgorithm.ZIP:
             with zipfile.ZipFile(path) as archive:

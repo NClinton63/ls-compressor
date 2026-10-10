@@ -39,6 +39,16 @@ cli/ ─┼─> core/          (domain logic: compression, media, encryption, wa
 | LZMA (XZ) | `xz` | `.xz` | `.tar.xz` |
 | GZIP | `gzip` | `.gz` | `.tar.gz` |
 | BZ2 | `bz2` | `.bz2` | `.tar.bz2` |
+| 7-Zip (extraction only) | `7z` | — | `.7z` |
+| RAR (extraction only) | `rar` | — | `.rar` |
+
+- **7z and RAR extraction.** Third-party archives in these formats can be
+  verified and extracted, including password-protected 7z/RAR archives
+  (`--password`). `Algorithm.can_compress` is `False` for both, so they are
+  excluded from compression choices in the CLI, GUI, settings, and watch
+  folders. RAR extraction shells out to a system `unrar`/`unar` tool via
+  `rarfile`; when no backend is installed the operation fails with a clear
+  message instead of silently failing.
 
 - **Zstandard is the default algorithm** — modern, fast, strong ratios, with
   full `.zst` stream and `.tar.zst` container support including integrity

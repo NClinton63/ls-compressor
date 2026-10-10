@@ -3,15 +3,23 @@
 import os
 from pathlib import Path
 
+import py7zr
 import pytest
 
 from ls_compressor.core.algorithms import CompressionAlgorithm
 from ls_compressor.core.compressor import compress, decompress
-from ls_compressor.core.exceptions import DestinationExistsError, InvalidRequestError
+from ls_compressor.core.exceptions import (
+    DestinationExistsError,
+    EncryptionError,
+    InvalidRequestError,
+    UnsupportedFormatError,
+)
 from ls_compressor.core.models import CompressionRequest, DecompressionRequest
 
 
-@pytest.mark.parametrize("algorithm", list(CompressionAlgorithm))
+@pytest.mark.parametrize(
+    "algorithm", [a for a in CompressionAlgorithm if a.can_compress]
+)
 def test_file_roundtrip_all_algorithms(
     tmp_path: Path, algorithm: CompressionAlgorithm
 ) -> None:
@@ -44,7 +52,9 @@ def test_file_roundtrip_all_algorithms(
     assert updates[-1].percentage == 100.0
 
 
-@pytest.mark.parametrize("algorithm", list(CompressionAlgorithm))
+@pytest.mark.parametrize(
+    "algorithm", [a for a in CompressionAlgorithm if a.can_compress]
+)
 def test_directory_roundtrip_all_algorithms(
     tmp_path: Path, algorithm: CompressionAlgorithm
 ) -> None:
@@ -133,6 +143,56 @@ def test_bz2_rejects_zero_compression_level(tmp_path: Path) -> None:
                 compression_level=0,
             )
         )
+
+
+def test_7z_archive_extracts_with_nesting(tmp_path: Path) -> None:
+    """External 7z archives restore nested files and folders."""
+    staging = tmp_path / "staging"
+    (staging / "nested").mkdir(parents=True)
+    (staging / "a.txt").write_text("alpha", encoding="utf-8")
+    (staging / "nested" / "b.txt").write_text("beta", encoding="utf-8")
+    archive = tmp_path / "external.7z"
+    with py7zr.SevenZipFile(archive, "w") as bundle:
+        bundle.writeall(staging, "staging")
+    restored = tmp_path / "restored"
+
+    result = decompress(DecompressionRequest(archive, restored))
+
+    assert (restored / "staging" / "a.txt").read_text(encoding="utf-8") == "alpha"
+    assert (restored / "staging" / "nested" / "b.txt").read_text() == "beta"
+    assert result.files_processed == 2
+    assert result.algorithm is CompressionAlgorithm.SEVENZ
+
+
+def test_encrypted_7z_requires_password(tmp_path: Path) -> None:
+    """Password-protected 7z archives refuse silent extraction."""
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "secret.txt").write_text("hidden", encoding="utf-8")
+    archive = tmp_path / "protected.7z"
+    with py7zr.SevenZipFile(archive, "w", password="s3cret") as bundle:
+        bundle.writeall(staging, "staging")
+    restored = tmp_path / "restored"
+
+    with pytest.raises(EncryptionError):
+        decompress(DecompressionRequest(archive, restored))
+
+    decompress(DecompressionRequest(archive, restored, password="s3cret"))
+    assert (restored / "staging" / "secret.txt").read_text() == "hidden"
+
+
+def test_extraction_only_algorithms_cannot_compress(tmp_path: Path) -> None:
+    """7z and RAR are rejected as compression output formats."""
+    source = tmp_path / "data.txt"
+    source.write_text("data", encoding="utf-8")
+
+    for algorithm in (CompressionAlgorithm.SEVENZ, CompressionAlgorithm.RAR):
+        with pytest.raises(UnsupportedFormatError, match="extraction-only"):
+            compress(
+                CompressionRequest(
+                    source, tmp_path / f"out{algorithm.value}", algorithm
+                )
+            )
 
 
 def test_decompression_overwrite_replaces_destination(tmp_path: Path) -> None:

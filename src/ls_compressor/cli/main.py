@@ -64,7 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     compress_parser.add_argument(
         "--algorithm",
         "-a",
-        choices=[algorithm.value for algorithm in CompressionAlgorithm],
+        choices=[
+            algorithm.value
+            for algorithm in CompressionAlgorithm
+            if algorithm.can_compress
+        ],
         default=CompressionAlgorithm.ZSTD.value,
     )
     compress_parser.add_argument("--level", "-l", type=int)
@@ -138,7 +142,11 @@ def build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument(
         "--algorithm",
         "-a",
-        choices=[algorithm.value for algorithm in CompressionAlgorithm],
+        choices=[
+            algorithm.value
+            for algorithm in CompressionAlgorithm
+            if algorithm.can_compress
+        ],
         default=CompressionAlgorithm.ZSTD.value,
     )
     watch_parser.add_argument(
@@ -286,7 +294,7 @@ def _run(args: argparse.Namespace) -> None:
                     decrypt_archive(args.source, archive, args.password)
                 algorithm = verify_archive(archive)
         else:
-            algorithm = verify_archive(args.source)
+            algorithm = verify_archive(args.source, password=args.password)
         _LOGGER.info(
             "Operation succeeded command=%s algorithm=%s", args.command, algorithm.value
         )

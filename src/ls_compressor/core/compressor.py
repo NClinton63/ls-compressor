@@ -13,6 +13,8 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from pathlib import Path
 
+import py7zr
+import rarfile
 import zstandard
 
 from ls_compressor.core.algorithms import CompressionAlgorithm
@@ -26,8 +28,10 @@ from ls_compressor.core.encryption import (
 )
 from ls_compressor.core.exceptions import (
     CompressionError,
+    CorruptedArchiveError,
     EncryptionError,
     InvalidRequestError,
+    UnsupportedFormatError,
 )
 from ls_compressor.core.filesystem import (
     CHUNK_SIZE,
@@ -82,6 +86,10 @@ def compress(
 ) -> OperationResult:
     """Compress a file or directory and verify integrity before success."""
     started = time.monotonic()
+    if not request.algorithm.can_compress:
+        raise UnsupportedFormatError(
+            f"{request.algorithm.display_name} archives are extraction-only"
+        )
     ensure_source(request.source)
     source_path = request.source.resolve()
     destination_path = request.destination.resolve()
@@ -260,7 +268,7 @@ def decompress(
     prepare_destination(request.destination, overwrite=request.overwrite)
     archive_path, archive_size = _archive_source(request)
     algorithm = (
-        verify_archive(archive_path)
+        verify_archive(archive_path, password=request.password)
         if request.verify
         else detect_algorithm(archive_path)
     )
@@ -269,6 +277,10 @@ def decompress(
         or tarfile.is_tarfile(archive_path)
         or (algorithm is CompressionAlgorithm.ZSTD and _zstd_contains_tar(archive_path))
     )
+    is_container = is_container or algorithm in {
+        CompressionAlgorithm.SEVENZ,
+        CompressionAlgorithm.RAR,
+    }
     temporary = (
         _temporary_directory(request.destination)
         if is_container
@@ -283,6 +295,14 @@ def decompress(
     try:
         if algorithm is CompressionAlgorithm.ZIP:
             files_processed = _extract_zip(archive_path, temporary, update)
+        elif algorithm is CompressionAlgorithm.SEVENZ:
+            files_processed = _extract_7z(
+                archive_path, temporary, update, request.password
+            )
+        elif algorithm is CompressionAlgorithm.RAR:
+            files_processed = _extract_rar(
+                archive_path, temporary, update, request.password
+            )
         elif is_container:
             files_processed = _extract_tar(archive_path, temporary, update)
         else:
@@ -301,6 +321,7 @@ def decompress(
         tarfile.TarError,
         zipfile.BadZipFile,
         zstandard.ZstdError,
+        rarfile.Error,
     ) as error:
         clear_destination(temporary)
         raise_filesystem_error(error, request.destination)
@@ -394,6 +415,79 @@ def _extract_tar(
                     update(len(chunk), target)
             apply_mode(target, member.mode)
             count += 1
+    return count
+
+
+def _extract_7z(
+    source: Path,
+    destination: Path,
+    update: Callable[[int, Path], None],
+    password: str | None,
+) -> int:
+    """Extract a 7z archive after validating every member path."""
+    try:
+        with py7zr.SevenZipFile(source, "r", password=password) as archive:
+            if archive.needs_password() and not password:
+                raise EncryptionError("A password is required to extract this archive")
+            members = archive.list()
+            for info in members:
+                safe_target(destination, info.filename)
+            archive.extractall(destination)
+    except EncryptionError:
+        raise
+    except py7zr.PasswordRequired as error:
+        raise EncryptionError(
+            "A password is required to extract this archive"
+        ) from error
+    except (OSError, py7zr.exceptions.ArchiveError) as error:
+        raise CorruptedArchiveError(f"Archive is corrupted: {source}") from error
+    count = 0
+    for info in members:
+        if info.is_directory:
+            continue
+        count += 1
+        update(info.uncompressed or 0, destination / info.filename)
+    if not members:
+        update(0, destination)
+    return count
+
+
+def _extract_rar(
+    source: Path,
+    destination: Path,
+    update: Callable[[int, Path], None],
+    password: str | None,
+) -> int:
+    """Extract a RAR archive with streaming reads and traversal checks."""
+    count = 0
+    try:
+        with rarfile.RarFile(source) as archive:
+            if archive.needs_password() and not password:
+                raise EncryptionError("A password is required to extract this archive")
+            for info in archive.infolist():
+                target = safe_target(destination, info.filename)
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with (
+                    archive.open(info, pwd=password) as compressed,
+                    target.open("wb") as output,
+                ):
+                    while chunk := compressed.read(CHUNK_SIZE):
+                        output.write(chunk)
+                        update(len(chunk), target)
+                count += 1
+    except EncryptionError:
+        raise
+    except rarfile.RarCannotExec as error:
+        raise UnsupportedFormatError(
+            "RAR extraction requires the 'unrar' or 'unar' tool to be installed"
+        ) from error
+    except (rarfile.PasswordRequired, rarfile.RarWrongPassword) as error:
+        raise EncryptionError(
+            "A password is required to extract this archive"
+        ) from error
     return count
 
 

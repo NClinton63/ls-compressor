@@ -20,6 +20,9 @@ from ls_compressor.core.verification import detect_algorithm, verify_archive
     ("signature", "algorithm"),
     [
         (b"\x28\xb5\x2f\xfd" + b"\x00" * 8, CompressionAlgorithm.ZSTD),
+        (b"7z\xbc\xaf'\x1c" + b"\x00" * 8, CompressionAlgorithm.SEVENZ),
+        (b"Rar!\x1a\x07\x00" + b"\x00" * 8, CompressionAlgorithm.RAR),
+        (b"Rar!\x1a\x07\x01\x00" + b"\x00" * 8, CompressionAlgorithm.RAR),
         (b"PK\x05\x06" + b"\x00" * 18, CompressionAlgorithm.ZIP),
         (b"\xfd7zXZ\x00", CompressionAlgorithm.XZ),
         (b"\x1f\x8brest", CompressionAlgorithm.GZIP),

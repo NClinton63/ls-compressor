@@ -13,6 +13,8 @@ from ls_compressor.core.algorithms import CompressionAlgorithm
         (CompressionAlgorithm.XZ, ".xz", ".tar.xz"),
         (CompressionAlgorithm.GZIP, ".gz", ".tar.gz"),
         (CompressionAlgorithm.BZ2, ".bz2", ".tar.bz2"),
+        (CompressionAlgorithm.SEVENZ, ".7z", ".7z"),
+        (CompressionAlgorithm.RAR, ".rar", ".rar"),
     ],
 )
 def test_archive_suffix_matches_source_type(
@@ -36,3 +38,22 @@ def test_zstandard_is_the_default_algorithm() -> None:
     assert CompressionAlgorithm.ZSTD.value == "zstd"
     assert CompressionAlgorithm.ZSTD.display_name == "Zstandard"
     assert next(iter(CompressionAlgorithm)) is CompressionAlgorithm.ZSTD
+
+
+@pytest.mark.parametrize(
+    ("algorithm", "expected"),
+    [
+        (CompressionAlgorithm.ZSTD, True),
+        (CompressionAlgorithm.ZIP, True),
+        (CompressionAlgorithm.XZ, True),
+        (CompressionAlgorithm.GZIP, True),
+        (CompressionAlgorithm.BZ2, True),
+        (CompressionAlgorithm.SEVENZ, False),
+        (CompressionAlgorithm.RAR, False),
+    ],
+)
+def test_can_compress_flags_write_support(
+    algorithm: CompressionAlgorithm, expected: bool
+) -> None:
+    """Only creation-capable formats report can_compress."""
+    assert algorithm.can_compress is expected

@@ -57,6 +57,8 @@ a = Analysis(
         "watchdog.observers",
         "zstandard",
         "zstandard.backend_cffi",
+        "py7zr",
+        "rarfile",
         "cryptography",
         "cryptography.hazmat",
         "cryptography.hazmat.primitives",

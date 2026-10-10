@@ -48,6 +48,8 @@ class AppSettings:
             raise ValueError("theme must be a supported theme preference")
         if not isinstance(self.default_algorithm, CompressionAlgorithm):
             raise ValueError("default_algorithm must be a supported algorithm")
+        if not self.default_algorithm.can_compress:
+            raise ValueError("default_algorithm must support creating archives")
         if isinstance(self.compression_level, bool) or not isinstance(
             self.compression_level, int
         ):
@@ -64,6 +66,11 @@ class AppSettings:
             self.last_used_algorithm, CompressionAlgorithm
         ):
             raise ValueError("last_used_algorithm must be supported or None")
+        if (
+            self.last_used_algorithm is not None
+            and not self.last_used_algorithm.can_compress
+        ):
+            raise ValueError("last_used_algorithm must support creating archives")
         if not isinstance(self.watch_folders, tuple) or not all(
             isinstance(folder, WatchFolderConfig) for folder in self.watch_folders
         ):

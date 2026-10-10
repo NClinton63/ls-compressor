@@ -14,7 +14,8 @@ interface or the command line.
 
 - Drag-and-drop or picker-based file and folder selection.
 - Queue-based background compression and decompression.
-- Zstandard (default), ZIP, GZIP, BZ2, and XZ output formats for compression.
+- Zstandard (default), ZIP, GZIP, BZ2, and XZ output formats for compression,
+  plus 7z and RAR extraction (RAR requires a system `unrar`/`unar` tool).
 - AES-256-GCM encrypted archives and self-extracting launchers.
 - Media optimization for PNG/JPEG/WebP images and FFmpeg-backed video.
 - Watch folders (Hot Folders) that process new files automatically.

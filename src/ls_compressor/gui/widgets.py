@@ -538,7 +538,8 @@ class SettingsDialog(QWidget):
         self._last_used_algorithm: CompressionAlgorithm | None = None
         self._algorithm = QComboBox()
         for algorithm in CompressionAlgorithm:
-            self._algorithm.addItem(algorithm.display_name, algorithm.value)
+            if algorithm.can_compress:
+                self._algorithm.addItem(algorithm.display_name, algorithm.value)
         self._level = QSpinBox()
         self._level.setRange(0, 9)
         self._algorithm.currentIndexChanged.connect(self._update_level_range)

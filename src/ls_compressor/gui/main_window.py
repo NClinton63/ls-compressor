@@ -31,8 +31,10 @@ from ls_compressor.core import (
     MediaFormat,
     MediaOptimizationMode,
     OperationKind,
+    PasswordStrength,
     is_encrypted_file,
     is_self_extracting_archive,
+    password_strength,
     self_extracting_extension,
 )
 from ls_compressor.core.watch import (
@@ -195,6 +197,10 @@ class CompressPage(_Page):
         self._exclude = QLineEdit(self)
         self._exclude.setPlaceholderText("Exclude globs (*.tmp, build/)")
         self._exclude.setMaximumWidth(170)
+        self._password.textChanged.connect(self._update_password_strength)
+        self._strength_label = QLabel("", self)
+        self._strength_label.setMinimumWidth(52)
+        self._strength_label.setVisible(False)
         self._encryption_combo = QComboBox(self)
         for fmt in EncryptionFormat:
             self._encryption_combo.addItem(fmt.display_name, fmt.value)
@@ -212,12 +218,34 @@ class CompressPage(_Page):
         controls.addWidget(self._preset_combo)
         controls.addWidget(self._algorithm_combo)
         controls.addWidget(self._password)
+        controls.addWidget(self._strength_label)
         controls.addWidget(self._exclude)
         controls.addWidget(self._encryption_combo)
         controls.addWidget(self._self_extracting)
         controls.addWidget(self._single_archive)
         controls.addWidget(self._run_button)
         return controls
+
+    def _update_password_strength(self, text: str) -> None:
+        """Refresh the colored strength label for the password field."""
+        if not text:
+            self._strength_label.setVisible(False)
+            return
+        strength = password_strength(text)
+        tokens = theme.theme_tokens(theme.current_theme())
+        colors = {
+            PasswordStrength.WEAK: tokens["STATUS_ERROR"],
+            PasswordStrength.FAIR: tokens["STATUS_RUNNING"],
+            PasswordStrength.GOOD: tokens["ACCENT"],
+            PasswordStrength.STRONG: tokens["STATUS_SUCCESS"],
+        }
+        self._strength_label.setText(strength.display_name)
+        self._strength_label.setStyleSheet(f"color: {colors[strength]};")
+        self._strength_label.setToolTip(
+            "Password strength estimate — prefer a longer passphrase with "
+            "mixed characters"
+        )
+        self._strength_label.setVisible(True)
 
     def _on_encryption_format_changed(self, index: int) -> None:
         """Self-extracting launchers only support the LS container format."""

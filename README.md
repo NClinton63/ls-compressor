@@ -15,9 +15,14 @@ interface or the command line.
 - Drag-and-drop or picker-based file and folder selection.
 - Queue-based background compression and decompression.
 - ZIP, GZIP, BZ2, and XZ output formats for compression.
+- AES-256-GCM encrypted archives and self-extracting launchers.
+- Media optimization for PNG/JPEG/WebP images and FFmpeg-backed video.
+- Watch folders (Hot Folders) that process new files automatically.
 - Automatic integrity verification after each operation.
 - Persistent user settings and recent folders.
 - Cross-platform: macOS `.app`, Windows `.exe`, and Linux executable.
+
+See [docs/FEATURES.md](docs/FEATURES.md) for detailed feature documentation.
 
 ## Installation
 

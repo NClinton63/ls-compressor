@@ -5,11 +5,13 @@ import gzip
 import hashlib
 import lzma
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import BinaryIO
 
 import py7zr
+import pyzipper
 import rarfile
 import zstandard
 
@@ -147,7 +149,9 @@ def verify_archive(path: Path, password: str | None = None) -> CompressionAlgori
         return algorithm
     try:
         if algorithm is CompressionAlgorithm.ZIP:
-            with zipfile.ZipFile(path) as archive:
+            with pyzipper.AESZipFile(path) as archive:
+                if password is not None:
+                    archive.setpassword(password.encode("utf-8"))
                 for info in archive.infolist():
                     safe_target(Path("."), info.filename)
                     if not info.is_dir():
@@ -165,24 +169,36 @@ def verify_archive(path: Path, password: str | None = None) -> CompressionAlgori
         else:
             with _stream_opener(algorithm)(path, "rb") as stream:
                 _digest(stream)
+    except RuntimeError as error:
+        message = str(error).lower()
+        if "password" in message or "encrypt" in message:
+            raise EncryptionError(
+                "A valid password is required to verify this archive"
+            ) from error
+        raise CorruptedArchiveError(f"Archive is corrupted: {path}") from error
     except (
         OSError,
         EOFError,
         lzma.LZMAError,
         tarfile.TarError,
         zipfile.BadZipFile,
+        pyzipper.BadZipFile,
         zstandard.ZstdError,
     ) as error:
         raise CorruptedArchiveError(f"Archive is corrupted: {path}") from error
     return algorithm
 
 
-def verify_against_source(source: Path, archive_path: Path) -> None:
+def verify_against_source(
+    source: Path, archive_path: Path, password: str | None = None
+) -> None:
     """Verify archive payload bytes and names against their original source."""
-    algorithm = verify_archive(archive_path)
+    algorithm = verify_archive(archive_path, password=password)
     try:
         if algorithm is CompressionAlgorithm.ZIP:
-            _verify_zip_source(source, archive_path)
+            _verify_zip_source(source, archive_path, password)
+        elif algorithm is CompressionAlgorithm.SEVENZ:
+            _verify_7z_source(source, archive_path, password)
         elif algorithm is CompressionAlgorithm.ZSTD and _zstd_contains_tar(
             archive_path
         ):
@@ -204,12 +220,15 @@ def verify_against_source(source: Path, archive_path: Path) -> None:
         lzma.LZMAError,
         tarfile.TarError,
         zipfile.BadZipFile,
+        pyzipper.BadZipFile,
         zstandard.ZstdError,
     ) as error:
         raise CorruptedArchiveError(f"Archive is corrupted: {archive_path}") from error
 
 
-def _verify_zip_source(source: Path, archive_path: Path) -> None:
+def _verify_zip_source(
+    source: Path, archive_path: Path, password: str | None = None
+) -> None:
     """Compare ZIP file entries with source files."""
     expected = {
         (
@@ -217,7 +236,9 @@ def _verify_zip_source(source: Path, archive_path: Path) -> None:
         ).as_posix(): path
         for path in iter_files(source)
     }
-    with zipfile.ZipFile(archive_path) as archive:
+    with pyzipper.AESZipFile(archive_path) as archive:
+        if password is not None:
+            archive.setpassword(password.encode("utf-8"))
         actual = {
             info.filename: info for info in archive.infolist() if not info.is_dir()
         }
@@ -227,6 +248,37 @@ def _verify_zip_source(source: Path, archive_path: Path) -> None:
             with path.open("rb") as original, archive.open(actual[name]) as compressed:
                 if _digest(original) != _digest(compressed):
                     raise IntegrityError(f"ZIP entry differs from source: {name}")
+
+
+def _verify_7z_source(source: Path, archive_path: Path, password: str | None) -> None:
+    """Compare 7z archive entries with source files via a temp extraction."""
+    expected = {
+        (
+            path.relative_to(source.parent) if source.is_dir() else Path(source.name)
+        ).as_posix(): path
+        for path in iter_files(source)
+    }
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with py7zr.SevenZipFile(archive_path, "r", password=password) as archive:
+                archive.extractall(path=temp_dir)
+            actual = {
+                path.relative_to(temp_dir).as_posix(): path
+                for path in iter_files(Path(temp_dir))
+            }
+            if set(actual) != set(expected):
+                raise IntegrityError("7z entries differ from source")
+            for name, path in expected.items():
+                with (
+                    path.open("rb") as original,
+                    actual[name].open("rb") as extracted,
+                ):
+                    if _digest(original) != _digest(extracted):
+                        raise IntegrityError(f"7z entry differs from source: {name}")
+    except IntegrityError:
+        raise
+    except (OSError, py7zr.exceptions.ArchiveError) as error:
+        raise CorruptedArchiveError(f"Archive is corrupted: {archive_path}") from error
 
 
 def _verify_zstd_tar_source(source: Path, archive_path: Path) -> None:

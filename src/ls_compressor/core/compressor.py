@@ -14,6 +14,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 import py7zr
+import pyzipper
 import rarfile
 import zstandard
 
@@ -48,6 +49,7 @@ from ls_compressor.core.filesystem import (
 from ls_compressor.core.models import (
     CompressionRequest,
     DecompressionRequest,
+    EncryptionFormat,
     OperationKind,
     OperationResult,
 )
@@ -86,9 +88,20 @@ def compress(
 ) -> OperationResult:
     """Compress a file or directory and verify integrity before success."""
     started = time.monotonic()
-    if not request.algorithm.can_compress:
+    encrypted_7z = (
+        request.password is not None
+        and request.encryption_format is EncryptionFormat.SEVENZ
+    )
+    if not request.algorithm.can_compress and not encrypted_7z:
         raise UnsupportedFormatError(
             f"{request.algorithm.display_name} archives are extraction-only"
+        )
+    if (
+        request.self_extracting
+        and request.encryption_format is not EncryptionFormat.LSE
+    ):
+        raise InvalidRequestError(
+            "Self-extracting archives require the LS container format"
         )
     ensure_source(request.source)
     source_path = request.source.resolve()
@@ -107,15 +120,20 @@ def compress(
         progress.advance(count, current)
 
     try:
-        if request.algorithm is CompressionAlgorithm.ZIP:
-            _compress_zip(request, temporary, update)
-        elif request.source.is_dir():
-            _compress_tar(request, temporary, update)
+        if request.password and request.encryption_format is EncryptionFormat.SEVENZ:
+            _compress_7z_encrypted(request, temporary, update)
+        elif request.password and request.encryption_format is EncryptionFormat.ZIP_AES:
+            _compress_zip_aes(request, temporary, update)
         else:
-            _compress_stream(request, temporary, update)
+            if request.algorithm is CompressionAlgorithm.ZIP:
+                _compress_zip(request, temporary, update)
+            elif request.source.is_dir():
+                _compress_tar(request, temporary, update)
+            else:
+                _compress_stream(request, temporary, update)
         if request.verify:
-            verify_against_source(request.source, temporary)
-        if request.password:
+            verify_against_source(request.source, temporary, password=request.password)
+        if request.password and request.encryption_format is EncryptionFormat.LSE:
             temporary = _wrap_encrypted_output(request, temporary)
         replace_path(temporary, request.destination, overwrite=request.overwrite)
         progress.complete()
@@ -198,6 +216,62 @@ def _compress_zip(
                 while chunk := source.read(CHUNK_SIZE):
                     destination.write(chunk)
                     update(len(chunk), path)
+
+
+def _compress_zip_aes(
+    request: CompressionRequest, temporary: Path, update: Callable[[int, Path], None]
+) -> None:
+    """Create a WinZip-compatible AES-256 encrypted ZIP archive."""
+    with pyzipper.AESZipFile(
+        temporary,
+        "w",
+        compression=pyzipper.ZIP_DEFLATED,
+        encryption=pyzipper.WZ_AES,
+    ) as archive:
+        archive.setpassword(request.password.encode("utf-8"))
+        paths = (
+            [request.source, *sorted(request.source.rglob("*"))]
+            if request.source.is_dir()
+            else [request.source]
+        )
+        for path in paths:
+            if path.is_symlink():
+                continue
+            name = (
+                path.relative_to(request.source.parent).as_posix()
+                if request.source.is_dir()
+                else path.name
+            )
+            if path.is_dir():
+                archive.write(path, name + "/")
+            else:
+                archive.write(path, name)
+                update(path.stat().st_size, path)
+
+
+def _compress_7z_encrypted(
+    request: CompressionRequest, temporary: Path, update: Callable[[int, Path], None]
+) -> None:
+    """Create a 7-Zip AES-256 encrypted archive with an encrypted header."""
+    with py7zr.SevenZipFile(
+        temporary, "w", password=request.password, header_encryption=True
+    ) as archive:
+        paths = (
+            [request.source, *sorted(request.source.rglob("*"))]
+            if request.source.is_dir()
+            else [request.source]
+        )
+        for path in paths:
+            if path.is_symlink():
+                continue
+            name = (
+                path.relative_to(request.source.parent).as_posix()
+                if request.source.is_dir()
+                else path.name
+            )
+            archive.write(path, name)
+            if path.is_file():
+                update(path.stat().st_size, path)
 
 
 def _compress_tar(
@@ -294,7 +368,9 @@ def decompress(
 
     try:
         if algorithm is CompressionAlgorithm.ZIP:
-            files_processed = _extract_zip(archive_path, temporary, update)
+            files_processed = _extract_zip(
+                archive_path, temporary, update, request.password
+            )
         elif algorithm is CompressionAlgorithm.SEVENZ:
             files_processed = _extract_7z(
                 archive_path, temporary, update, request.password
@@ -320,6 +396,7 @@ def decompress(
         lzma.LZMAError,
         tarfile.TarError,
         zipfile.BadZipFile,
+        pyzipper.BadZipFile,
         zstandard.ZstdError,
         rarfile.Error,
     ) as error:
@@ -346,24 +423,37 @@ def _temporary_directory(destination: Path) -> Path:
 
 
 def _extract_zip(
-    source: Path, destination: Path, update: Callable[[int, Path], None]
+    source: Path,
+    destination: Path,
+    update: Callable[[int, Path], None],
+    password: str | None = None,
 ) -> int:
     """Extract ZIP entries with traversal checks and preserved permissions."""
     count = 0
-    with zipfile.ZipFile(source) as archive:
-        for info in archive.infolist():
-            target = safe_target(destination, info.filename)
-            if info.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
+    try:
+        with pyzipper.AESZipFile(source) as archive:
+            if password is not None:
+                archive.setpassword(password.encode("utf-8"))
+            for info in archive.infolist():
+                target = safe_target(destination, info.filename)
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    apply_mode(target, info.external_attr >> 16)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(info) as compressed, target.open("wb") as output:
+                    while chunk := compressed.read(CHUNK_SIZE):
+                        output.write(chunk)
+                        update(len(chunk), target)
                 apply_mode(target, info.external_attr >> 16)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with archive.open(info) as compressed, target.open("wb") as output:
-                while chunk := compressed.read(CHUNK_SIZE):
-                    output.write(chunk)
-                    update(len(chunk), target)
-            apply_mode(target, info.external_attr >> 16)
-            count += 1
+                count += 1
+    except RuntimeError as error:
+        message = str(error).lower()
+        if "password" in message or "encrypt" in message:
+            raise EncryptionError(
+                "A valid password is required to extract this archive"
+            ) from error
+        raise CorruptedArchiveError(f"Archive is corrupted: {source}") from error
     return count
 
 

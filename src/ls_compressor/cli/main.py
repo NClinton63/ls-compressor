@@ -13,6 +13,7 @@ from ls_compressor.core import (
     CompressionAlgorithm,
     CompressionRequest,
     DecompressionRequest,
+    EncryptionFormat,
     MediaOptimizationMode,
     MediaOptimizationRequest,
     MediaOptimizationResult,
@@ -73,6 +74,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     compress_parser.add_argument("--level", "-l", type=int)
     compress_parser.add_argument("--password", "-p")
+    compress_parser.add_argument(
+        "--encryption",
+        choices=[fmt.value for fmt in EncryptionFormat],
+        default=EncryptionFormat.LSE.value,
+        help="encryption container for --password archives",
+    )
     compress_parser.add_argument(
         "--self-extracting",
         action="store_true",
@@ -336,6 +343,7 @@ def _run(args: argparse.Namespace) -> None:
                 verify=not args.no_verify,
                 password=args.password,
                 self_extracting=args.self_extracting,
+                encryption_format=EncryptionFormat(args.encryption),
             ),
             callback,
         )

@@ -59,6 +59,7 @@ a = Analysis(
         "zstandard.backend_cffi",
         "py7zr",
         "rarfile",
+        "pyzipper",
         "cryptography",
         "cryptography.hazmat",
         "cryptography.hazmat.primitives",

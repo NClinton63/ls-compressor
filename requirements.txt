@@ -7,3 +7,4 @@ watchdog==4.0.2
 zstandard==0.25.0
 py7zr==1.0.0
 rarfile==4.2
+pyzipper==0.4.0

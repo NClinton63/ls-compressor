@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, QThreadPool, Signal
 
 from ls_compressor.core import (
     CompressionAlgorithm,
+    EncryptionFormat,
     MediaFormat,
     MediaOptimizationMode,
     OperationResult,
@@ -66,6 +67,7 @@ class JobQueue(QObject):
         video_crf: int | None = None,
         password: str | None = None,
         self_extracting: bool = False,
+        encryption_format: EncryptionFormat = EncryptionFormat.LSE,
     ) -> UUID:
         """Create a pending job and enqueue it for sequential execution."""
         job_id = uuid4()
@@ -84,6 +86,7 @@ class JobQueue(QObject):
             video_crf=video_crf,
             password=password,
             self_extracting=self_extracting,
+            encryption_format=encryption_format,
         )
         self._jobs[job_id] = job
         self._order.append(job_id)
@@ -124,6 +127,7 @@ class JobQueue(QObject):
             video_crf=job.video_crf,
             password=job.password,
             self_extracting=job.self_extracting,
+            encryption_format=job.encryption_format,
         )
         worker.signals.started.connect(self._on_started)
         worker.signals.progress.connect(self._on_progress)

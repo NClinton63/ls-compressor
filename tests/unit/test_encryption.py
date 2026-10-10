@@ -163,3 +163,77 @@ def test_compress_self_extracting_py(tmp_path: Path) -> None:
 
     assert result.destination == launcher
     assert is_self_extracting_archive(launcher)
+
+
+def test_aes_zip_roundtrip_requires_password(tmp_path: Path) -> None:
+    """WinZip-compatible AES archives extract only with the password."""
+    source = tmp_path / "report.txt"
+    source.write_text("confidential", encoding="utf-8")
+    archive = tmp_path / "report.zip"
+    restored = tmp_path / "restored"
+
+    from ls_compressor.core import EncryptionFormat
+
+    compress(
+        CompressionRequest(
+            source=source,
+            destination=archive,
+            algorithm=Algorithm.ZIP,
+            password=PASSWORD,
+            encryption_format=EncryptionFormat.ZIP_AES,
+        )
+    )
+
+    assert archive.exists()
+    assert not is_encrypted_file(archive)
+    with pytest.raises(EncryptionError):
+        decompress(DecompressionRequest(archive, restored))
+    decompress(DecompressionRequest(archive, restored, password=PASSWORD))
+    assert (restored / "report.txt").read_text(encoding="utf-8") == "confidential"
+
+
+def test_aes_7z_roundtrip_preserves_tree(tmp_path: Path) -> None:
+    """7z AES archives roundtrip a directory tree with the password."""
+    source = tmp_path / "folder"
+    (source / "nested").mkdir(parents=True)
+    (source / "a.txt").write_text("one", encoding="utf-8")
+    (source / "nested" / "b.txt").write_text("two", encoding="utf-8")
+    archive = tmp_path / "folder.7z"
+    restored = tmp_path / "restored"
+
+    from ls_compressor.core import EncryptionFormat
+
+    compress(
+        CompressionRequest(
+            source=source,
+            destination=archive,
+            algorithm=Algorithm.SEVENZ,
+            password=PASSWORD,
+            encryption_format=EncryptionFormat.SEVENZ,
+        )
+    )
+
+    decompress(DecompressionRequest(archive, restored, password=PASSWORD))
+    assert (restored / "folder" / "a.txt").read_text() == "one"
+    assert (restored / "folder" / "nested" / "b.txt").read_text() == "two"
+
+
+def test_self_extracting_requires_lse_container(tmp_path: Path) -> None:
+    """Self-extracting launchers are rejected for standard containers."""
+    source = tmp_path / "data.txt"
+    source.write_text("data", encoding="utf-8")
+
+    from ls_compressor.core import EncryptionFormat
+    from ls_compressor.core.exceptions import InvalidRequestError
+
+    with pytest.raises(InvalidRequestError, match="LS container"):
+        compress(
+            CompressionRequest(
+                source=source,
+                destination=tmp_path / "out.py",
+                algorithm=Algorithm.ZIP,
+                password=PASSWORD,
+                self_extracting=True,
+                encryption_format=EncryptionFormat.ZIP_AES,
+            )
+        )

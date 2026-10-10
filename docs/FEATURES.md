@@ -87,7 +87,21 @@ time, files processed, compression ratio, and space-savings percentage.
 
 **Password-protected compression:** pass `password` on a `CompressionRequest`
 (or `--password` in the CLI, or the password field on the Compress page). The
-archive is compressed normally, then wrapped in the encrypted container.
+`encryption_format` field / `--encryption` flag / GUI combo selects the
+container:
+
+- `lse` (default) — the custom AES-256-GCM container described above. Maximum
+  security: the whole payload including filenames is encrypted, but only
+  LS Compressor can open it.
+- `zip-aes` — WinZip-compatible AES-256 entries inside a standard `.zip`
+  (readable by 7-Zip, WinRAR, macOS Archive Utility, etc.) via `pyzipper`.
+- `7z` — a standard AES-256 `.7z` archive with encrypted headers via `py7zr`
+  (names are also hidden). Created regardless of the selected algorithm.
+
+Self-extracting launchers remain exclusive to `lse` and are disabled in the
+GUI for the compatible formats. Encrypted archives verify with
+`verify_archive(path, password=...)` and decompress with the same
+`--password` flag.
 
 **Self-extracting archives** (`self_extracting=True` / `--self-extracting`):
 

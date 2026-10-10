@@ -11,6 +11,7 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ls_compressor.core import (
     CompressionAlgorithm,
+    EncryptionFormat,
     MediaFormat,
     MediaOptimizationMode,
     OperationKind,
@@ -184,6 +186,13 @@ class CompressPage(_Page):
         self._password.setPlaceholderText("Password")
         self._password.setEchoMode(QLineEdit.EchoMode.Password)
         self._password.setMaximumWidth(140)
+        self._encryption_combo = QComboBox(self)
+        for fmt in EncryptionFormat:
+            self._encryption_combo.addItem(fmt.display_name, fmt.value)
+        self._encryption_combo.setMaximumWidth(210)
+        self._encryption_combo.currentIndexChanged.connect(
+            self._on_encryption_format_changed
+        )
         self._self_extracting = QCheckBox("Self-extracting", self)
         self._run_button = QPushButton("Compress")
         self._run_button.setObjectName("compressButton")
@@ -191,9 +200,23 @@ class CompressPage(_Page):
         self._run_button.clicked.connect(self.run_clicked.emit)
         controls.addWidget(self._algorithm_combo)
         controls.addWidget(self._password)
+        controls.addWidget(self._encryption_combo)
         controls.addWidget(self._self_extracting)
         controls.addWidget(self._run_button)
         return controls
+
+    def _on_encryption_format_changed(self, index: int) -> None:
+        """Self-extracting launchers only support the LS container format."""
+        if self._encryption_combo.itemData(index) != EncryptionFormat.LSE.value:
+            self._self_extracting.setChecked(False)
+            self._self_extracting.setEnabled(False)
+        else:
+            self._self_extracting.setEnabled(True)
+
+    def selected_encryption_format(self) -> EncryptionFormat:
+        """Return the chosen encryption container format."""
+        value = self._encryption_combo.currentData()
+        return EncryptionFormat(value) if value is not None else EncryptionFormat.LSE
 
     def password(self) -> str:
         """Return the entered encryption password, or an empty string if unset."""
@@ -495,7 +518,9 @@ class MainWindow(QMainWindow):
         algorithm = (
             self._settings.last_used_algorithm or self._settings.default_algorithm
         )
-        self._compress_page.populate_algorithms(list(CompressionAlgorithm))
+        self._compress_page.populate_algorithms(
+            [a for a in CompressionAlgorithm if a.can_compress]
+        )
         self._compress_page.set_algorithm(algorithm)
         self._update_header(self._compress_page.table(), GuiJobKind.COMPRESS)
         self._update_header(self._decompress_page.table(), GuiJobKind.DECOMPRESS)
@@ -600,9 +625,11 @@ class MainWindow(QMainWindow):
 
         password: str | None = None
         self_extracting = False
+        encryption_format = EncryptionFormat.LSE
         if kind == GuiJobKind.COMPRESS:
             password = self._compress_page.password().strip() or None
             self_extracting = self._compress_page.is_self_extracting()
+            encryption_format = self._compress_page.selected_encryption_format()
             if self_extracting and not password:
                 dialog = QMessageBox(self)
                 dialog.setIcon(QMessageBox.Icon.Warning)
@@ -662,6 +689,7 @@ class MainWindow(QMainWindow):
                 compression_level=level,
                 password=password,
                 self_extracting=self_extracting,
+                encryption_format=encryption_format,
             )
             table.convert_row_to_job(row, job_id, kind, algorithm, destination)
 
@@ -686,6 +714,11 @@ class MainWindow(QMainWindow):
             )
             suffix = algorithm.archive_suffix(is_directory=source.is_dir())
             if password:
+                fmt = self._compress_page.selected_encryption_format()
+                if fmt is EncryptionFormat.ZIP_AES:
+                    return base / (source.name + ".zip")
+                if fmt is EncryptionFormat.SEVENZ:
+                    return base / (source.name + ".7z")
                 return base / (source.name + suffix + ".lsenc")
             return base / (source.name + suffix)
         if kind == GuiJobKind.MEDIA_OPTIMIZE:
@@ -699,7 +732,20 @@ class MainWindow(QMainWindow):
         if source.is_dir():
             return base / source.name
         name = source.name
-        for suffix in (".tar.bz2", ".tar.xz", ".tar.gz", ".zip", ".bz2", ".xz", ".gz"):
+        for suffix in (
+            ".tar.bz2",
+            ".tar.xz",
+            ".tar.gz",
+            ".tar.zst",
+            ".zip",
+            ".bz2",
+            ".xz",
+            ".gz",
+            ".zst",
+            ".7z",
+            ".rar",
+            ".lsenc",
+        ):
             if name.lower().endswith(suffix):
                 name = name[: -len(suffix)]
                 break

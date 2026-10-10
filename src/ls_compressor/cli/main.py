@@ -13,6 +13,7 @@ from ls_compressor.core import (
     CompressionAlgorithm,
     CompressionRequest,
     DecompressionRequest,
+    EncryptionFormat,
     MediaOptimizationMode,
     MediaOptimizationRequest,
     MediaOptimizationResult,
@@ -64,11 +65,21 @@ def build_parser() -> argparse.ArgumentParser:
     compress_parser.add_argument(
         "--algorithm",
         "-a",
-        choices=[algorithm.value for algorithm in CompressionAlgorithm],
+        choices=[
+            algorithm.value
+            for algorithm in CompressionAlgorithm
+            if algorithm.can_compress
+        ],
         default=CompressionAlgorithm.ZSTD.value,
     )
     compress_parser.add_argument("--level", "-l", type=int)
     compress_parser.add_argument("--password", "-p")
+    compress_parser.add_argument(
+        "--encryption",
+        choices=[fmt.value for fmt in EncryptionFormat],
+        default=EncryptionFormat.LSE.value,
+        help="encryption container for --password archives",
+    )
     compress_parser.add_argument(
         "--self-extracting",
         action="store_true",
@@ -138,7 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument(
         "--algorithm",
         "-a",
-        choices=[algorithm.value for algorithm in CompressionAlgorithm],
+        choices=[
+            algorithm.value
+            for algorithm in CompressionAlgorithm
+            if algorithm.can_compress
+        ],
         default=CompressionAlgorithm.ZSTD.value,
     )
     watch_parser.add_argument(
@@ -286,7 +301,7 @@ def _run(args: argparse.Namespace) -> None:
                     decrypt_archive(args.source, archive, args.password)
                 algorithm = verify_archive(archive)
         else:
-            algorithm = verify_archive(args.source)
+            algorithm = verify_archive(args.source, password=args.password)
         _LOGGER.info(
             "Operation succeeded command=%s algorithm=%s", args.command, algorithm.value
         )
@@ -328,6 +343,7 @@ def _run(args: argparse.Namespace) -> None:
                 verify=not args.no_verify,
                 password=args.password,
                 self_extracting=args.self_extracting,
+                encryption_format=EncryptionFormat(args.encryption),
             ),
             callback,
         )

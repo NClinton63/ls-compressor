@@ -48,6 +48,8 @@ class WatchFolderConfig:
             raise ValueError("enabled must be a boolean")
         if not isinstance(self.algorithm, CompressionAlgorithm):
             raise ValueError("algorithm must be a supported compression algorithm")
+        if not self.algorithm.can_compress:
+            raise ValueError("algorithm must support creating archives")
         if self.compression_level is not None and (
             not isinstance(self.compression_level, int) or self.compression_level < 1
         ):

@@ -28,6 +28,7 @@ from ls_compressor.core.media import (
 from ls_compressor.core.models import (
     CompressionRequest,
     DecompressionRequest,
+    EncryptionFormat,
     OperationKind,
     OperationProgress,
     OperationResult,
@@ -45,6 +46,7 @@ __all__ = [
     "CompressionRequest",
     "DecompressionRequest",
     "EncryptionError",
+    "EncryptionFormat",
     "InvalidRequestError",
     "MediaFormat",
     "MediaOptimizationMode",

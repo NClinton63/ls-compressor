@@ -7,6 +7,7 @@ from uuid import UUID
 
 from ls_compressor.core import (
     CompressionAlgorithm,
+    EncryptionFormat,
     MediaFormat,
     MediaOptimizationMode,
     OperationResult,
@@ -48,6 +49,7 @@ class GuiJob:
     video_crf: int | None = None
     password: str | None = None
     self_extracting: bool = False
+    encryption_format: EncryptionFormat = EncryptionFormat.LSE
     progress_percent: float = 0.0
     current_file: Path | None = None
     result: OperationResult | None = None

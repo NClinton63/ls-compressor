@@ -16,6 +16,24 @@ class OperationKind(StrEnum):
     MEDIA_OPTIMIZE = "media_optimize"
 
 
+class EncryptionFormat(StrEnum):
+    """Encryption containers available for password-protected archives."""
+
+    LSE = "lse"
+    ZIP_AES = "zip-aes"
+    SEVENZ = "7z"
+
+    @property
+    def display_name(self) -> str:
+        """Return the human-readable name for the encryption format."""
+        names = {
+            self.LSE: "LS Container (maximum security)",
+            self.ZIP_AES: "AES-256 ZIP (compatible)",
+            self.SEVENZ: "AES-256 7z (compatible)",
+        }
+        return names[self]
+
+
 @dataclass(frozen=True, slots=True)
 class CompressionRequest:
     """Describe a compression operation without performing filesystem access."""
@@ -28,6 +46,7 @@ class CompressionRequest:
     verify: bool = True
     password: str | None = None
     self_extracting: bool = False
+    encryption_format: EncryptionFormat = EncryptionFormat.LSE
 
 
 @dataclass(frozen=True, slots=True)

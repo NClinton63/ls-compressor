@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
 from ls_compressor.core.algorithms import CompressionAlgorithm
 from ls_compressor.core.compressor import compress
+from ls_compressor.core.encryption import self_extracting_extension
 from ls_compressor.core.exceptions import CompressionError
 from ls_compressor.core.media import MediaOptimizationMode, optimize_media
 from ls_compressor.core.models import CompressionRequest, OperationResult
@@ -135,9 +135,7 @@ def derive_watch_destination(source: Path, config: WatchFolderConfig) -> Path:
         return config.output_folder / (source.stem + "-optimized" + suffix)
     if config.password:
         if config.self_extracting:
-            if sys.platform == "darwin":
-                return config.output_folder / (source.stem + ".app")
-            return config.output_folder / (source.stem + ".py")
+            return config.output_folder / (source.stem + self_extracting_extension())
         return config.output_folder / (
             source.name
             + config.algorithm.archive_suffix(is_directory=source.is_dir())

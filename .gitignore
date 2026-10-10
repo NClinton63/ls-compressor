@@ -11,6 +11,7 @@ dist/
 build/
 *.spec
 !packaging/ls-compressor.spec
+!packaging/ls-extract.spec
 *.log
 .pytest_cache/
 .ruff_cache/
@@ -32,6 +33,7 @@ Thumbs.db
 *.app/
 *.dmg
 *.pkg
+packaging/stub/
 
 # Generated intermediates (kept: assets/icon.* produced by scripts/generate_icons.py)
 assets/AppIcon.iconset/

@@ -26,14 +26,21 @@ binaries = []
 if FFMPEG_BINARY is not None:
     binaries.append((FFMPEG_BINARY, "."))
 
+STUB_NAME = "ls-extract.exe" if sys.platform == "win32" else "ls-extract"
+STUB_PATH = ROOT / "packaging" / "stub" / STUB_NAME
+
+datas = [
+    (str(ROOT / "assets"), "assets"),
+    (str(ROOT / "src" / "ls_compressor" / "gui" / "theme.qss"), "ls_compressor/gui"),
+]
+if STUB_PATH.is_file():
+    datas.append((str(STUB_PATH), "."))
+
 a = Analysis(
     [str(ROOT / "packaging" / "entry.py")],
     pathex=[str(ROOT / "src")],
     binaries=binaries,
-    datas=[
-        (str(ROOT / "assets"), "assets"),
-        (str(ROOT / "src" / "ls_compressor" / "gui" / "theme.qss"), "ls_compressor/gui"),
-    ],
+    datas=datas,
     hiddenimports=[
         "PySide6.QtSvg",
         "PySide6.QtCore",

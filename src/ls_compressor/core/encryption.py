@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import plistlib
+import shutil
 import struct
 import sys
 import tempfile
@@ -22,6 +23,8 @@ HEADER_MAGIC = b"LSE\x01"
 SALT_LEN = 16
 NONCE_LEN = 12
 ITERATIONS = 100_000
+STUB_MAGIC = b"LSEX"
+STUB_FOOTER_LEN = len(STUB_MAGIC) + 8
 
 
 def derive_key(password: str, salt: bytes) -> bytes:
@@ -296,6 +299,51 @@ def _create_app_bundle(payload: bytes, output_path: Path) -> None:
     (contents / "Info.plist").write_bytes(plistlib.dumps(info_plist))
 
 
+def _stub_name() -> str:
+    """Return the platform-specific stub binary filename."""
+    return "ls-extract.exe" if sys.platform == "win32" else "ls-extract"
+
+
+def _find_extract_stub() -> Path | None:
+    """Locate a prebuilt standalone ``ls-extract`` stub binary, if present."""
+    candidates: list[Path] = []
+    env_stub = os.environ.get("LS_EXTRACT_STUB")
+    if env_stub:
+        candidates.append(Path(env_stub))
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        candidates.append(Path(bundle_dir) / _stub_name())
+    candidates.append(Path(sys.executable).resolve().parent / _stub_name())
+    repo_stub = (
+        Path(__file__).resolve().parents[3] / "packaging" / "stub" / _stub_name()
+    )
+    candidates.append(repo_stub)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _create_stub_launcher(payload: bytes, output_path: Path, stub: Path) -> None:
+    """Append the encrypted payload and footer to a copy of the stub binary."""
+    with stub.open("rb") as src, output_path.open("wb") as dst:
+        shutil.copyfileobj(src, dst, length=1024 * 1024)
+        dst.write(payload)
+        dst.write(STUB_MAGIC + struct.pack("<Q", len(payload)))
+    if sys.platform != "win32":
+        output_path.chmod(0o755)
+
+
+def self_extracting_extension(*, stub_path: Path | None = None) -> str:
+    """Return the output filename extension for a self-extracting archive."""
+    if sys.platform == "darwin":
+        return ".app"
+    stub = Path(stub_path) if stub_path is not None else _find_extract_stub()
+    if stub is not None and stub.is_file():
+        return ".exe" if sys.platform == "win32" else ".lsex"
+    return ".py"
+
+
 def create_self_extracting_archive(
     archive_path: Path,
     output_path: Path,
@@ -303,8 +351,10 @@ def create_self_extracting_archive(
     *,
     algorithm: CompressionAlgorithm | None = None,
     is_directory: bool = False,
+    stub_path: Path | None = None,
 ) -> None:
     """Encrypt an archive and wrap it in a runnable self-extracting launcher."""
+    output_path = Path(output_path)
     with tempfile.TemporaryDirectory() as temp_dir:
         encrypted = Path(temp_dir) / "payload.lse"
         encrypt_archive(
@@ -317,6 +367,10 @@ def create_self_extracting_archive(
         payload = encrypted.read_bytes()
     if sys.platform == "darwin" and output_path.suffix.lower() == ".app":
         _create_app_bundle(payload, output_path)
+        return
+    stub = Path(stub_path) if stub_path is not None else _find_extract_stub()
+    if stub is not None and stub.is_file():
+        _create_stub_launcher(payload, output_path, stub)
     else:
         _create_py_launcher(payload, output_path)
 
@@ -335,10 +389,40 @@ def _read_payload_from_script(script_path: Path) -> bytes:
     return base64.b64decode(text[start:end])
 
 
+def _stub_payload_range(path: Path) -> tuple[int, int] | None:
+    """Return (offset, length) of the stub-appended payload, or None."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return None
+    if size <= STUB_FOOTER_LEN:
+        return None
+    try:
+        with path.open("rb") as stream:
+            stream.seek(size - STUB_FOOTER_LEN)
+            footer = stream.read(STUB_FOOTER_LEN)
+    except OSError:
+        return None
+    if footer[: len(STUB_MAGIC)] != STUB_MAGIC:
+        return None
+    payload_len = struct.unpack("<Q", footer[len(STUB_MAGIC) :])[0]
+    offset = size - STUB_FOOTER_LEN - payload_len
+    if payload_len <= 0 or offset < 0:
+        return None
+    return offset, payload_len
+
+
 def is_self_extracting_archive(path: Path) -> bool:
-    """Return True if path is a .py or .app self-extracting archive."""
-    if path.is_file() and path.suffix.lower() in {".py", ".lsex"}:
-        return _launcher_marker() in path.read_text(encoding="utf-8")[:4096]
+    """Return True if path is a .py, .app, or binary self-extracting archive."""
+    if path.is_file():
+        if _stub_payload_range(path) is not None:
+            return True
+        if path.suffix.lower() in {".py", ".lsex"}:
+            try:
+                head = path.read_text(encoding="utf-8")[:4096]
+            except (OSError, UnicodeDecodeError):
+                return False
+            return _launcher_marker() in head
     if path.is_dir() and path.suffix.lower() == ".app":
         executable = path / "Contents" / "MacOS" / "self-extract"
         if executable.is_file():
@@ -352,9 +436,16 @@ def _launcher_marker() -> str:
 
 
 def extract_payload(path: Path) -> bytes:
-    """Return the raw encrypted payload from a .py or .app self-extracting archive."""
-    if path.is_file() and path.suffix.lower() in {".py", ".lsex"}:
-        return _read_payload_from_script(path)
+    """Return the raw encrypted payload from a self-extracting archive."""
+    if path.is_file():
+        stub_range = _stub_payload_range(path)
+        if stub_range is not None:
+            offset, payload_len = stub_range
+            with path.open("rb") as stream:
+                stream.seek(offset)
+                return stream.read(payload_len)
+        if path.suffix.lower() in {".py", ".lsex"}:
+            return _read_payload_from_script(path)
     if path.is_dir() and path.suffix.lower() == ".app":
         return _read_payload_from_script(path / "Contents" / "MacOS" / "self-extract")
     raise EncryptionError(f"Unsupported self-extracting archive: {path}")

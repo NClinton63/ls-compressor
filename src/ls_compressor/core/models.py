@@ -47,6 +47,12 @@ class CompressionRequest:
     password: str | None = None
     self_extracting: bool = False
     encryption_format: EncryptionFormat = EncryptionFormat.LSE
+    extra_sources: tuple[Path, ...] = ()
+
+    @property
+    def all_sources(self) -> tuple[Path, ...]:
+        """Return every input source, primary first."""
+        return (self.source, *self.extra_sources)
 
 
 @dataclass(frozen=True, slots=True)

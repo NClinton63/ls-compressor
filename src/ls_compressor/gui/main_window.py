@@ -194,6 +194,8 @@ class CompressPage(_Page):
             self._on_encryption_format_changed
         )
         self._self_extracting = QCheckBox("Self-extracting", self)
+        self._single_archive = QCheckBox("Single archive", self)
+        self._single_archive.setToolTip("Combine all queued sources into one archive")
         self._run_button = QPushButton("Compress")
         self._run_button.setObjectName("compressButton")
         self._run_button.setProperty("variant", "primary")
@@ -202,6 +204,7 @@ class CompressPage(_Page):
         controls.addWidget(self._password)
         controls.addWidget(self._encryption_combo)
         controls.addWidget(self._self_extracting)
+        controls.addWidget(self._single_archive)
         controls.addWidget(self._run_button)
         return controls
 
@@ -225,6 +228,10 @@ class CompressPage(_Page):
     def is_self_extracting(self) -> bool:
         """Return whether the self-extracting archive option is selected."""
         return self._self_extracting.isChecked()
+
+    def combines_sources(self) -> bool:
+        """Return whether queued sources should merge into one archive."""
+        return self._single_archive.isChecked()
 
     def _create_stats(self) -> list[StatCard]:
         return [
@@ -654,6 +661,21 @@ class MainWindow(QMainWindow):
                 return
             password = entered
 
+        if (
+            kind == GuiJobKind.COMPRESS
+            and self._compress_page.combines_sources()
+            and len(rows_to_queue) > 1
+        ):
+            self._queue_combined(
+                rows_to_queue,
+                table,
+                output_folder,
+                password,
+                self_extracting,
+                encryption_format,
+            )
+            return
+
         for row, source in rows_to_queue:
             destination = self._derive_destination(
                 source,
@@ -691,7 +713,49 @@ class MainWindow(QMainWindow):
                 self_extracting=self_extracting,
                 encryption_format=encryption_format,
             )
-            table.convert_row_to_job(row, job_id, kind, algorithm, destination)
+            table.convert_row_to_job(row, job_id, kind, destination, algorithm)
+
+    def _queue_combined(
+        self,
+        rows_to_queue: list[tuple[int, Path]],
+        table: JobTable,
+        output_folder: Path | None,
+        password: str | None,
+        self_extracting: bool,
+        encryption_format: EncryptionFormat,
+    ) -> None:
+        """Enqueue one job that archives several pending sources together."""
+        sources = [source for _, source in rows_to_queue]
+        algorithm = (
+            self._compress_page.selected_algorithm() or self._settings.default_algorithm
+        )
+        destination = self._derive_destination(
+            sources[0],
+            GuiJobKind.COMPRESS,
+            output_folder,
+            password=password,
+            self_extracting=self_extracting,
+            multi_source=True,
+        )
+        level = self._settings.compression_level
+        if algorithm in {CompressionAlgorithm.GZIP, CompressionAlgorithm.BZ2}:
+            level = max(1, level)
+        job_id = self._queue.add_job(
+            kind=GuiJobKind.COMPRESS,
+            source=sources[0],
+            destination=destination,
+            algorithm=algorithm,
+            compression_level=level,
+            password=password,
+            self_extracting=self_extracting,
+            encryption_format=encryption_format,
+            extra_sources=tuple(sources[1:]),
+        )
+        table.convert_row_to_job(
+            rows_to_queue[0][0], job_id, GuiJobKind.COMPRESS, destination, algorithm
+        )
+        for row, _ in sorted(rows_to_queue[1:], reverse=True):
+            table.removeRow(row)
 
     def _derive_destination(
         self,
@@ -700,6 +764,7 @@ class MainWindow(QMainWindow):
         output_folder: Path | None = None,
         password: str | None = None,
         self_extracting: bool = False,
+        multi_source: bool = False,
     ) -> Path:
         """Compute the destination path for a source and operation kind."""
         base = output_folder or source.parent
@@ -710,15 +775,18 @@ class MainWindow(QMainWindow):
                 self._compress_page.selected_algorithm()
                 or self._settings.default_algorithm
             )
-            suffix = algorithm.archive_suffix(is_directory=source.is_dir())
+            suffix = algorithm.archive_suffix(
+                is_directory=multi_source or source.is_dir()
+            )
+            base_name = source.stem if multi_source else source.name
             if password:
                 fmt = self._compress_page.selected_encryption_format()
                 if fmt is EncryptionFormat.ZIP_AES:
-                    return base / (source.name + ".zip")
+                    return base / (base_name + ".zip")
                 if fmt is EncryptionFormat.SEVENZ:
-                    return base / (source.name + ".7z")
-                return base / (source.name + suffix + ".lsenc")
-            return base / (source.name + suffix)
+                    return base / (base_name + ".7z")
+                return base / (base_name + suffix + ".lsenc")
+            return base / (base_name + suffix)
         if kind == GuiJobKind.MEDIA_OPTIMIZE:
             suffix = source.suffix
             if (

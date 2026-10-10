@@ -209,3 +209,82 @@ def test_decompression_overwrite_replaces_destination(tmp_path: Path) -> None:
     decompress(DecompressionRequest(archive, restored, overwrite=True))
 
     assert restored.read_bytes() == b"new"
+
+
+@pytest.mark.parametrize(
+    "algorithm",
+    [CompressionAlgorithm.ZIP, CompressionAlgorithm.ZSTD, CompressionAlgorithm.XZ],
+)
+def test_multi_source_roundtrip(
+    tmp_path: Path, algorithm: CompressionAlgorithm
+) -> None:
+    """Several sources share one archive and extract to distinct members."""
+    file_a = tmp_path / "a.txt"
+    file_a.write_text("alpha", encoding="utf-8")
+    folder = tmp_path / "docs"
+    (folder / "nested").mkdir(parents=True)
+    (folder / "nested" / "b.txt").write_text("beta", encoding="utf-8")
+    archive = tmp_path / f"bundle{algorithm.archive_suffix(is_directory=True)}"
+    restored = tmp_path / "restored"
+
+    result = compress(
+        CompressionRequest(
+            file_a,
+            archive,
+            algorithm,
+            extra_sources=(folder,),
+        )
+    )
+    decompress(DecompressionRequest(archive, restored))
+
+    assert (restored / "a.txt").read_text() == "alpha"
+    assert (restored / "docs" / "nested" / "b.txt").read_text() == "beta"
+    assert result.files_processed == 2
+    assert result.integrity_verified
+
+
+def test_multi_source_rejects_duplicate_names(tmp_path: Path) -> None:
+    """Two sources with the same name would collide inside the archive."""
+    dir_a = tmp_path / "one"
+    dir_b = tmp_path / "two"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    same_a = dir_a / "report.txt"
+    same_b = dir_b / "report.txt"
+    same_a.write_text("a")
+    same_b.write_text("b")
+
+    with pytest.raises(InvalidRequestError, match="unique names"):
+        compress(
+            CompressionRequest(
+                same_a,
+                tmp_path / "out.zip",
+                CompressionAlgorithm.ZIP,
+                extra_sources=(same_b,),
+            )
+        )
+
+
+def test_multi_source_encrypted_roundtrip(tmp_path: Path) -> None:
+    """Password-protected multi-source archives decrypt to the full tree."""
+    file_a = tmp_path / "a.txt"
+    file_a.write_text("alpha", encoding="utf-8")
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    (folder / "b.txt").write_text("beta", encoding="utf-8")
+    archive = tmp_path / "bundle.lsenc"
+    restored = tmp_path / "restored"
+
+    compress(
+        CompressionRequest(
+            file_a,
+            archive,
+            CompressionAlgorithm.ZSTD,
+            password="pw",
+            extra_sources=(folder,),
+        )
+    )
+    decompress(DecompressionRequest(archive, restored, password="pw"))
+
+    assert (restored / "a.txt").read_text() == "alpha"
+    assert (restored / "docs" / "b.txt").read_text() == "beta"

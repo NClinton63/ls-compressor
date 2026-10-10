@@ -75,7 +75,7 @@ def test_permissions_are_preserved_where_portable(tmp_path: Path) -> None:
     archive = tmp_path / "script.zip"
     restored = tmp_path / "restored"
 
-    compress(CompressionRequest(source, archive))
+    compress(CompressionRequest(source, archive, CompressionAlgorithm.ZIP))
     decompress(DecompressionRequest(archive, restored))
 
     assert (restored / "script").stat().st_mode & 0o777 == 0o751

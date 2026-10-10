@@ -15,12 +15,12 @@ from ls_compressor.core.watch import (
 
 
 def test_watch_folder_config_defaults() -> None:
-    """Default watch folder config compresses with ZIP."""
+    """Default watch folder config compresses with Zstandard."""
     config = WatchFolderConfig(path=Path("/in"), output_folder=Path("/out"))
 
     assert config.operation is WatchOperationType.COMPRESS
     assert config.enabled is True
-    assert config.algorithm is CompressionAlgorithm.ZIP
+    assert config.algorithm is CompressionAlgorithm.ZSTD
     assert config.media_mode is MediaOptimizationMode.LOSSLESS
     assert config.recursive is True
 

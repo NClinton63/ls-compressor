@@ -206,6 +206,22 @@ def _launcher_script() -> str:
                 mode = mode_map[ext.rsplit(".")[-1]]
                 with tarfile.open(fileobj=io.BytesIO(plaintext), mode=mode) as archive:
                     archive.extractall(dest)
+            elif ext in (".zst", ".tar.zst"):
+                try:
+                    import zstandard
+                except ImportError:
+                    sys.exit(
+                        "This archive requires the 'zstandard' package: "
+                        "pip install zstandard"
+                    )
+                dctx = zstandard.ZstdDecompressor()
+                if ext == ".tar.zst":
+                    with dctx.stream_reader(io.BytesIO(plaintext)) as reader:
+                        with tarfile.open(fileobj=reader, mode="r|") as archive:
+                            archive.extractall(dest)
+                else:
+                    with dctx.stream_reader(io.BytesIO(plaintext)) as reader:
+                        (dest / "output").write_bytes(reader.read())
             elif ext == ".gz":
                 (dest / "output").write_bytes(gzip.decompress(plaintext))
             elif ext == ".xz":

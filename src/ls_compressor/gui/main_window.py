@@ -649,7 +649,7 @@ class MainWindow(QMainWindow):
             algorithm = (
                 self._compress_page.selected_algorithm()
                 if kind == GuiJobKind.COMPRESS
-                else CompressionAlgorithm.ZIP
+                else CompressionAlgorithm.ZSTD
             )
             level = self._settings.compression_level
             if algorithm in {CompressionAlgorithm.GZIP, CompressionAlgorithm.BZ2}:

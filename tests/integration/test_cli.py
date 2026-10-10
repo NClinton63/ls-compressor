@@ -26,7 +26,7 @@ def run_cli(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.parametrize("algorithm", ["zip", "xz", "gzip", "bz2"])
+@pytest.mark.parametrize("algorithm", ["zstd", "zip", "xz", "gzip", "bz2"])
 def test_cli_file_roundtrip(tmp_path: Path, algorithm: str) -> None:
     """Every CLI algorithm roundtrips file bytes in separate processes."""
     source = tmp_path / "résumé.txt"

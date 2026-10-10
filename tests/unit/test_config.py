@@ -18,10 +18,10 @@ from ls_compressor.infrastructure.config import (
 
 
 def test_settings_have_sensible_defaults() -> None:
-    """Fresh settings favor ZIP and nearby output without recent state."""
+    """Fresh settings favor Zstandard and nearby output without recent state."""
     settings = AppSettings()
 
-    assert settings.default_algorithm is CompressionAlgorithm.ZIP
+    assert settings.default_algorithm is CompressionAlgorithm.ZSTD
     assert settings.compression_level == 6
     assert settings.output_location_preference is OutputLocationPreference.SAME_FOLDER
     assert settings.last_used_folder is None
@@ -111,7 +111,7 @@ def test_json_serialization_has_only_portable_values(tmp_path: Path) -> None:
     decoded = json.loads(settings.to_json())
 
     assert decoded["last_used_folder"] == str(tmp_path)
-    assert decoded["default_algorithm"] == "zip"
+    assert decoded["default_algorithm"] == "zstd"
     assert decoded["watch_folders"] == [watch.to_dict()]
     assert decoded["theme"] == "dark"
 

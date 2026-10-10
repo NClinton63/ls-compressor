@@ -99,14 +99,17 @@ A feature branch may merge into `dev` only when **all** of these hold:
 8. `docs/FEATURES.md` and README updated if the feature is user-visible.
 9. Commit history is clean, messages explain the "why".
 
-Merge command:
+Feature branches are pushed to origin and merged into `dev` via pull request:
 
 ```bash
-git checkout dev
-git merge --no-ff feature/<name> -m "Merge feature/<name>: <summary>"
-git push
-git branch -d feature/<name>
+git push -u origin feature/<name>
+gh pr create --base dev --title "<summary>" --body "..."
 ```
+
+The PR author does not self-merge; a reviewer merges after checking the
+Definition of Done. Commit messages must not contain AI-generation markers,
+tool attribution, or co-author trailers. After merge, delete the remote
+branch and branch the next feature from the updated `dev`.
 
 ## Release process
 

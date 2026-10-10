@@ -32,7 +32,7 @@ class ThemePreference(StrEnum):
 class AppSettings:
     """Validated user preferences used by application interfaces."""
 
-    default_algorithm: CompressionAlgorithm = CompressionAlgorithm.ZIP
+    default_algorithm: CompressionAlgorithm = CompressionAlgorithm.ZSTD
     compression_level: int = 6
     output_location_preference: OutputLocationPreference = (
         OutputLocationPreference.SAME_FOLDER

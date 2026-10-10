@@ -29,7 +29,7 @@ class WatchFolderConfig:
     output_folder: Path
     operation: WatchOperationType = WatchOperationType.COMPRESS
     enabled: bool = True
-    algorithm: CompressionAlgorithm = CompressionAlgorithm.ZIP
+    algorithm: CompressionAlgorithm = CompressionAlgorithm.ZSTD
     compression_level: int | None = None
     media_mode: MediaOptimizationMode = MediaOptimizationMode.LOSSLESS
     recursive: bool = True

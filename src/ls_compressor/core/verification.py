@@ -9,6 +9,8 @@ import zipfile
 from pathlib import Path
 from typing import BinaryIO
 
+import zstandard
+
 from ls_compressor.core.algorithms import CompressionAlgorithm
 from ls_compressor.core.exceptions import (
     CorruptedArchiveError,
@@ -27,6 +29,8 @@ def detect_algorithm(path: Path) -> CompressionAlgorithm:
         raise CorruptedArchiveError(f"Cannot read archive: {path}") from error
     if signature.startswith(b"PK\x03\x04") or signature.startswith(b"PK\x05\x06"):
         return CompressionAlgorithm.ZIP
+    if signature.startswith(b"\x28\xb5\x2f\xfd"):
+        return CompressionAlgorithm.ZSTD
     if signature.startswith(b"\xfd7zXZ\x00"):
         return CompressionAlgorithm.XZ
     if signature.startswith(b"\x1f\x8b"):
@@ -47,10 +51,36 @@ def _digest(stream: BinaryIO) -> bytes:
 def _stream_opener(algorithm: CompressionAlgorithm):
     """Return the standard-library opener for a compressed stream."""
     return {
+        CompressionAlgorithm.ZSTD: zstandard.open,
         CompressionAlgorithm.XZ: lzma.open,
         CompressionAlgorithm.GZIP: gzip.open,
         CompressionAlgorithm.BZ2: bz2.open,
     }[algorithm]
+
+
+def _zstd_contains_tar(path: Path) -> bool:
+    """Return True when a Zstandard stream decompresses to a tar archive."""
+    try:
+        with zstandard.open(path, "rb") as stream:
+            head = stream.read(512)
+    except OSError:
+        return False
+    return len(head) > 262 and head[257:262] == b"ustar"
+
+
+def _verify_tar_members(archive: tarfile.TarFile) -> None:
+    """Validate member names and digest every payload in an open tar."""
+    for member in archive:
+        safe_target(Path("."), member.name)
+        if member.issym() or member.islnk():
+            raise CorruptedArchiveError(
+                f"Archive contains an unsafe link: {member.name}"
+            )
+        if member.isfile():
+            stream = archive.extractfile(member)
+            if stream is not None:
+                with stream:
+                    _digest(stream)
 
 
 def verify_archive(path: Path) -> CompressionAlgorithm:
@@ -64,18 +94,15 @@ def verify_archive(path: Path) -> CompressionAlgorithm:
                     if not info.is_dir():
                         with archive.open(info) as stream:
                             _digest(stream)
+        elif algorithm is CompressionAlgorithm.ZSTD and _zstd_contains_tar(path):
+            with (
+                zstandard.open(path, "rb") as decompressed,
+                tarfile.open(fileobj=decompressed, mode="r|") as archive,
+            ):
+                _verify_tar_members(archive)
         elif tarfile.is_tarfile(path):
             with tarfile.open(path, "r:*") as archive:
-                for member in archive.getmembers():
-                    safe_target(Path("."), member.name)
-                    if member.issym() or member.islnk():
-                        raise CorruptedArchiveError(
-                            f"Archive contains an unsafe link: {member.name}"
-                        )
-                    stream = archive.extractfile(member)
-                    if stream is not None:
-                        with stream:
-                            _digest(stream)
+                _verify_tar_members(archive)
         else:
             with _stream_opener(algorithm)(path, "rb") as stream:
                 _digest(stream)
@@ -85,6 +112,7 @@ def verify_archive(path: Path) -> CompressionAlgorithm:
         lzma.LZMAError,
         tarfile.TarError,
         zipfile.BadZipFile,
+        zstandard.ZstdError,
     ) as error:
         raise CorruptedArchiveError(f"Archive is corrupted: {path}") from error
     return algorithm
@@ -96,6 +124,10 @@ def verify_against_source(source: Path, archive_path: Path) -> None:
     try:
         if algorithm is CompressionAlgorithm.ZIP:
             _verify_zip_source(source, archive_path)
+        elif algorithm is CompressionAlgorithm.ZSTD and _zstd_contains_tar(
+            archive_path
+        ):
+            _verify_zstd_tar_source(source, archive_path)
         elif source.is_dir():
             _verify_tar_source(source, archive_path)
         else:
@@ -113,6 +145,7 @@ def verify_against_source(source: Path, archive_path: Path) -> None:
         lzma.LZMAError,
         tarfile.TarError,
         zipfile.BadZipFile,
+        zstandard.ZstdError,
     ) as error:
         raise CorruptedArchiveError(f"Archive is corrupted: {archive_path}") from error
 
@@ -135,6 +168,30 @@ def _verify_zip_source(source: Path, archive_path: Path) -> None:
             with path.open("rb") as original, archive.open(actual[name]) as compressed:
                 if _digest(original) != _digest(compressed):
                     raise IntegrityError(f"ZIP entry differs from source: {name}")
+
+
+def _verify_zstd_tar_source(source: Path, archive_path: Path) -> None:
+    """Compare a Zstandard-compressed tar stream with source files."""
+    expected = {
+        path.relative_to(source.parent).as_posix(): path for path in iter_files(source)
+    }
+    actual: dict[str, bytes] = {}
+    with (
+        zstandard.open(archive_path, "rb") as decompressed,
+        tarfile.open(fileobj=decompressed, mode="r|") as archive,
+    ):
+        for member in archive:
+            if member.isfile():
+                stream = archive.extractfile(member)
+                if stream is not None:
+                    with stream:
+                        actual[member.name] = _digest(stream)
+    if set(actual) != set(expected):
+        raise IntegrityError("Tar entries differ from source")
+    for name, path in expected.items():
+        with path.open("rb") as original:
+            if _digest(original) != actual[name]:
+                raise IntegrityError(f"Tar entry differs from source: {name}")
 
 
 def _verify_tar_source(source: Path, archive_path: Path) -> None:

@@ -150,7 +150,7 @@ def test_same_folder_destination_ignores_last_used_folder(qapp, tmp_path: Path) 
 
     destination = window._derive_destination(source, GuiJobKind.COMPRESS)
 
-    assert destination == source.parent / "report.txt.zip"
+    assert destination == source.parent / "report.txt.zst"
 
 
 def test_decompression_strips_compound_archive_suffix(qapp, tmp_path: Path) -> None:

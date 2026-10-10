@@ -13,11 +13,11 @@ from ls_compressor.core.models import (
 )
 
 
-def test_compression_request_defaults_to_verified_zip() -> None:
-    """Compression requests favor compatibility and integrity by default."""
-    request = CompressionRequest(Path("source.txt"), Path("source.txt.zip"))
+def test_compression_request_defaults_to_verified_zstandard() -> None:
+    """Compression requests favor speed and integrity by default."""
+    request = CompressionRequest(Path("source.txt"), Path("source.txt.zst"))
 
-    assert request.algorithm is CompressionAlgorithm.ZIP
+    assert request.algorithm is CompressionAlgorithm.ZSTD
     assert request.verify is True
     assert request.overwrite is False
     assert request.compression_level is None

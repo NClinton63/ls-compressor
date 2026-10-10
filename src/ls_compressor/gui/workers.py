@@ -97,7 +97,7 @@ class CompressionWorker(QRunnable):
         request = CompressionRequest(
             source=self.source,
             destination=self.destination,
-            algorithm=self.algorithm or CompressionAlgorithm.ZIP,
+            algorithm=self.algorithm or CompressionAlgorithm.ZSTD,
             compression_level=self.compression_level,
             overwrite=False,
             verify=True,

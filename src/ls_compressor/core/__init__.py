@@ -10,6 +10,7 @@ from ls_compressor.core.encryption import (
     is_encrypted_file,
     is_self_extracting_archive,
     read_encrypted_extension,
+    self_extracting_extension,
 )
 from ls_compressor.core.exceptions import (
     CompressionError,
@@ -70,6 +71,7 @@ __all__ = [
     "is_self_extracting_archive",
     "optimize_media",
     "read_encrypted_extension",
+    "self_extracting_extension",
     "verify_against_source",
     "verify_archive",
 ]

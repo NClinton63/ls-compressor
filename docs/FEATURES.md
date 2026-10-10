@@ -110,11 +110,20 @@ GUI for the compatible formats. Encrypted archives verify with
 
 **Self-extracting archives** (`self_extracting=True` / `--self-extracting`):
 
-- Generates a runnable launcher embedding the encrypted payload as base64.
-- On macOS it produces a `.app` bundle; otherwise a standalone `.py` script
-  containing a self-contained extraction stub.
-- `is_self_extracting_archive()` identifies generated launchers via an embedded
-  marker; `extract_payload()` recovers the encrypted payload.
+- When a prebuilt `ls-extract` stub binary is available, the encrypted payload
+  is appended to a copy of the stub (`payload + b"LSEX" + 8-byte LE length`
+  footer), producing a standalone executable (`.exe` on Windows, `.lsex`
+  elsewhere) that extracts without a Python install. Stub lookup order:
+  `LS_EXTRACT_STUB` env var → bundled app resources → the executable's
+  directory → `packaging/stub/` for development builds.
+- Without a stub, a runnable `.py` launcher embedding the payload as base64 is
+  generated instead; on macOS `.app` destinations produce a `.app` bundle.
+- Build the stub with `pyinstaller packaging/ls-extract.spec --distpath
+  packaging/stub`. The stub reuses `core/` for decryption/extraction and is
+  bundled into the packaged app when present at build time.
+- `is_self_extracting_archive()` detects binary stubs via the `LSEX` footer
+  and script launchers via an embedded marker; `extract_payload()` recovers
+  the encrypted payload from either form.
 - `verify` works on encrypted/self-extracting inputs: the CLI transparently
   decrypts to a temp directory before verifying (requires `--password`).
 
@@ -258,6 +267,7 @@ Ctrl-C.
 
 - Builds are unsigned/unnotarized — first launch triggers Gatekeeper /
   SmartScreen prompts (see README for workarounds).
-- Encrypted self-extracting launchers require a Python runtime on the target
-  machine (the `.py` launcher) or are macOS-specific (the `.app` wrapper).
+- Self-extracting archives are standalone executables only when a matching
+  `ls-extract` stub binary was built for the target platform; otherwise they
+  fall back to a `.py` launcher that requires a Python runtime.
 - XZ support depends on the stdlib `lzma` module.

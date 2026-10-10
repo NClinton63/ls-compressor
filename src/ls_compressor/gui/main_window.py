@@ -1,7 +1,6 @@
 """Main application window for LS Compressor."""
 
 import logging
-import sys
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID
@@ -33,6 +32,7 @@ from ls_compressor.core import (
     OperationKind,
     is_encrypted_file,
     is_self_extracting_archive,
+    self_extracting_extension,
 )
 from ls_compressor.core.watch import (
     WatchEvent,
@@ -705,9 +705,7 @@ class MainWindow(QMainWindow):
         base = output_folder or source.parent
         if kind == GuiJobKind.COMPRESS:
             if password and self_extracting:
-                if sys.platform == "darwin":
-                    return base / (source.stem + ".app")
-                return base / (source.stem + ".py")
+                return base / (source.stem + self_extracting_extension())
             algorithm = (
                 self._compress_page.selected_algorithm()
                 or self._settings.default_algorithm

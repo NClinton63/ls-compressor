@@ -77,8 +77,13 @@ def _make_zip(tmp_path: Path) -> Path:
     return archive
 
 
-def test_create_self_extracting_py_launcher(tmp_path: Path) -> None:
+def test_create_self_extracting_py_launcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A .py launcher embeds the encrypted payload and can extract itself."""
+    from ls_compressor.core import encryption
+
+    monkeypatch.setattr(encryption, "_find_extract_stub", lambda: None)
     archive = _make_zip(tmp_path)
     launcher = tmp_path / "source.py"
 
@@ -145,8 +150,13 @@ def test_compress_with_password_and_decompress(tmp_path: Path) -> None:
     assert (out / "data.txt").read_text(encoding="utf-8") == "hello encrypted world"
 
 
-def test_compress_self_extracting_py(tmp_path: Path) -> None:
+def test_compress_self_extracting_py(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The compressor can build a runnable .py self-extracting archive."""
+    from ls_compressor.core import encryption
+
+    monkeypatch.setattr(encryption, "_find_extract_stub", lambda: None)
     source = tmp_path / "data.txt"
     source.write_text("hello self-extracting", encoding="utf-8")
     launcher = tmp_path / "data.py"
@@ -163,6 +173,66 @@ def test_compress_self_extracting_py(tmp_path: Path) -> None:
 
     assert result.destination == launcher
     assert is_self_extracting_archive(launcher)
+
+
+def test_create_self_extracting_stub_binary(tmp_path: Path) -> None:
+    """A stub-based archive appends the payload and footer to the binary."""
+    from ls_compressor.core import encryption
+
+    stub = tmp_path / "ls-extract"
+    stub.write_bytes(b"\x7fELF fake stub binary")
+    archive = _make_zip(tmp_path)
+    launcher = tmp_path / "source.lsex"
+
+    create_self_extracting_archive(
+        archive,
+        launcher,
+        PASSWORD,
+        algorithm=Algorithm.ZIP,
+        is_directory=False,
+        stub_path=stub,
+    )
+
+    data = launcher.read_bytes()
+    assert data.startswith(b"\x7fELF fake stub binary")
+    footer = data[-encryption.STUB_FOOTER_LEN :]
+    assert footer[:4] == encryption.STUB_MAGIC
+    assert is_self_extracting_archive(launcher)
+    payload = extract_payload(launcher)
+    assert payload.startswith(b"LSE\x01")
+
+    encrypted = tmp_path / "payload.lse"
+    encrypted.write_bytes(payload)
+    restored = tmp_path / "restored.zip"
+    decrypt_archive(encrypted, restored, PASSWORD)
+    assert restored.read_bytes() == archive.read_bytes()
+
+
+def test_self_extracting_extension_prefers_stub(tmp_path: Path) -> None:
+    """The output extension switches to a binary suffix when a stub exists."""
+    from ls_compressor.core.encryption import self_extracting_extension
+
+    stub = tmp_path / "ls-extract"
+    stub.write_bytes(b"stub")
+    if sys.platform == "darwin":
+        assert self_extracting_extension(stub_path=stub) == ".app"
+    elif sys.platform == "win32":
+        assert self_extracting_extension(stub_path=stub) == ".exe"
+    else:
+        assert self_extracting_extension(stub_path=stub) == ".lsex"
+
+    missing = tmp_path / "missing-stub"
+    if sys.platform == "darwin":
+        assert self_extracting_extension(stub_path=missing) == ".app"
+    else:
+        assert self_extracting_extension(stub_path=missing) == ".py"
+
+
+def test_is_self_extracting_archive_rejects_plain_binary(tmp_path: Path) -> None:
+    """A binary without the LSEX footer is not treated as self-extracting."""
+    blob = tmp_path / "program"
+    blob.write_bytes(b"\x7fELF" + b"\x00" * 64)
+    assert not is_self_extracting_archive(blob)
 
 
 def test_new_archives_record_argon2id_kdf_metadata(tmp_path: Path) -> None:

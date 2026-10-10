@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from ls_compressor.core import (
     CompressionAlgorithm,
+    CompressionPreset,
     EncryptionFormat,
     MediaFormat,
     MediaOptimizationMode,
@@ -178,6 +179,11 @@ class CompressPage(_Page):
 
     def _build_controls(self) -> QHBoxLayout:
         controls = super()._build_controls()
+        self._preset_combo = QComboBox(self)
+        self._preset_combo.addItem("Custom", None)
+        for preset in CompressionPreset:
+            self._preset_combo.addItem(preset.display_name, preset.value)
+        self._preset_combo.setMaximumWidth(110)
         self._algorithm_combo = AlgorithmComboBox(self)
         self._algorithm_combo.currentIndexChanged.connect(
             lambda _index: self.algorithm_changed.emit()
@@ -203,6 +209,7 @@ class CompressPage(_Page):
         self._run_button.setObjectName("compressButton")
         self._run_button.setProperty("variant", "primary")
         self._run_button.clicked.connect(self.run_clicked.emit)
+        controls.addWidget(self._preset_combo)
         controls.addWidget(self._algorithm_combo)
         controls.addWidget(self._password)
         controls.addWidget(self._exclude)
@@ -260,6 +267,11 @@ class CompressPage(_Page):
         if value is None:
             return None
         return CompressionAlgorithm(value)
+
+    def selected_preset(self) -> CompressionPreset | None:
+        """Return the chosen compression preset, or None for custom."""
+        value = self._preset_combo.currentData()
+        return CompressionPreset(value) if value is not None else None
 
     def set_algorithm(self, algorithm: CompressionAlgorithm) -> None:
         index = self._algorithm_combo.findData(algorithm.value)
@@ -708,12 +720,23 @@ class MainWindow(QMainWindow):
                     row, job_id, kind, destination, media_format=MediaFormat.PNG
                 )
                 continue
-            algorithm = (
-                self._compress_page.selected_algorithm()
+            preset = (
+                self._compress_page.selected_preset()
                 if kind == GuiJobKind.COMPRESS
-                else CompressionAlgorithm.ZSTD
+                else None
             )
-            level = self._settings.compression_level
+            algorithm = (
+                preset.algorithm
+                if preset is not None
+                else (
+                    self._compress_page.selected_algorithm()
+                    if kind == GuiJobKind.COMPRESS
+                    else CompressionAlgorithm.ZSTD
+                )
+            )
+            level = (
+                preset.level if preset is not None else self._settings.compression_level
+            )
             if algorithm in {CompressionAlgorithm.GZIP, CompressionAlgorithm.BZ2}:
                 level = max(1, level)
             job_id = self._queue.add_job(

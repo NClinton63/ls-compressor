@@ -27,6 +27,7 @@ from ls_compressor.core.media import (
     optimize_media,
 )
 from ls_compressor.core.models import (
+    CompressionPreset,
     CompressionRequest,
     DecompressionRequest,
     EncryptionFormat,
@@ -44,6 +45,7 @@ from ls_compressor.core.verification import (
 __all__ = [
     "CompressionAlgorithm",
     "CompressionError",
+    "CompressionPreset",
     "CompressionRequest",
     "DecompressionRequest",
     "EncryptionError",

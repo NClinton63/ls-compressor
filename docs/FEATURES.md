@@ -70,6 +70,10 @@ cli/ ─┼─> core/          (domain logic: compression, media, encryption, wa
   directory and its contents, `dir/*.log` anchors to the source root. A
   `.lsignore` file inside a source folder adds the same patterns
   automatically.
+- **Presets** (`CompressionPreset`): Fast → Zstd level 1, Balanced → Zstd
+  level 3 (default), Maximum → XZ level 9. CLI `--preset` overrides
+  `--algorithm`/`--level`; the GUI preset combo overrides the algorithm
+  dropdown when set to anything but "Custom".
 - `overwrite` protection: operations refuse to clobber an existing destination
   unless `force`/`--force` is set.
 - Source existence/destination preparation handled centrally in

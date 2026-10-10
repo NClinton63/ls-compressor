@@ -91,3 +91,19 @@ def test_filesystem_ignore_pattern_matching(tmp_path: Path) -> None:
     (tmp_path / ".lsignore").write_text("# c\n*.log\n\n", "utf-8")
     assert load_ignore_patterns(tmp_path) == ("*.log",)
     assert load_ignore_patterns(tmp_path / "missing") == ()
+
+
+def test_compression_presets_resolve_algorithm_and_level() -> None:
+    """Each preset maps to a valid write-capable algorithm and level."""
+    from ls_compressor.core.models import CompressionPreset
+
+    assert CompressionPreset.FAST.algorithm is CompressionAlgorithm.ZSTD
+    assert CompressionPreset.FAST.level == 1
+    assert CompressionPreset.BALANCED.algorithm is CompressionAlgorithm.ZSTD
+    assert CompressionPreset.BALANCED.level == 3
+    assert CompressionPreset.MAXIMUM.algorithm is CompressionAlgorithm.XZ
+    assert CompressionPreset.MAXIMUM.level == 9
+    for preset in CompressionPreset:
+        assert preset.algorithm.can_compress
+        assert 0 <= preset.level <= 9
+        assert preset.display_name

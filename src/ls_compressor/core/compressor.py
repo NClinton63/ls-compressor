@@ -10,7 +10,10 @@ import tempfile
 import time
 import zipfile
 from collections.abc import Callable
+from contextlib import ExitStack
 from pathlib import Path
+
+import zstandard
 
 from ls_compressor.core.algorithms import CompressionAlgorithm
 from ls_compressor.core.encryption import (
@@ -56,9 +59,18 @@ from ls_compressor.core.verification import (
 )
 
 
+def _zstd_open(path: Path, mode: str, level: int | None = None):
+    """Open a Zstandard stream, applying a compression level for writes."""
+    if "r" in mode:
+        return zstandard.open(path, mode)
+    compressor = zstandard.ZstdCompressor(level=level if level is not None else 3)
+    return zstandard.open(path, mode, cctx=compressor)
+
+
 def _stream_opener(algorithm: CompressionAlgorithm):
     """Return the compressed stream opener for an algorithm."""
     return {
+        CompressionAlgorithm.ZSTD: _zstd_open,
         CompressionAlgorithm.XZ: lzma.open,
         CompressionAlgorithm.GZIP: gzip.open,
         CompressionAlgorithm.BZ2: bz2.open,
@@ -135,6 +147,7 @@ def _compression_kwargs(request: CompressionRequest) -> dict[str, int]:
         0
         if request.algorithm
         in {
+            CompressionAlgorithm.ZSTD,
             CompressionAlgorithm.ZIP,
             CompressionAlgorithm.XZ,
         }
@@ -145,6 +158,8 @@ def _compression_kwargs(request: CompressionRequest) -> dict[str, int]:
             f"{request.algorithm.display_name} compression level must be between "
             f"{minimum} and 9"
         )
+    if request.algorithm is CompressionAlgorithm.ZSTD:
+        return {"level": request.compression_level}
     key = "preset" if request.algorithm is CompressionAlgorithm.XZ else "compresslevel"
     return {key: request.compression_level}
 
@@ -181,26 +196,45 @@ def _compress_tar(
     request: CompressionRequest, temporary: Path, update: Callable[[int, Path], None]
 ) -> None:
     """Create a compressed tar archive while reporting file-byte progress."""
+    kwargs = _compression_kwargs(request)
+    if request.algorithm is CompressionAlgorithm.ZSTD:
+        level = kwargs.get("level", 3)
+        compressor = zstandard.ZstdCompressor(level=level)
+        with (
+            temporary.open("wb") as stream,
+            compressor.stream_writer(stream) as compressed,
+            tarfile.open(fileobj=compressed, mode="w|") as archive,
+        ):
+            _add_tar_members(request, archive, update)
+        return
     mode = {
         CompressionAlgorithm.XZ: "w:xz",
         CompressionAlgorithm.GZIP: "w:gz",
         CompressionAlgorithm.BZ2: "w:bz2",
     }[request.algorithm]
-    kwargs = _compression_kwargs(request)
     with tarfile.open(temporary, mode, **kwargs) as archive:
-        for path in [request.source, *sorted(request.source.rglob("*"))]:
-            if path.is_symlink():
-                continue
-            name = path.relative_to(request.source.parent).as_posix()
-            info = archive.gettarinfo(str(path), name)
-            if path.is_file():
-                with path.open("rb") as stream:
-                    reader = ProgressReader(
-                        stream, lambda count, item=path: update(count, item)
-                    )
-                    archive.addfile(info, reader)
-            else:
-                archive.addfile(info)
+        _add_tar_members(request, archive, update)
+
+
+def _add_tar_members(
+    request: CompressionRequest,
+    archive: tarfile.TarFile,
+    update: Callable[[int, Path], None],
+) -> None:
+    """Add a source directory tree to an open tar archive."""
+    for path in [request.source, *sorted(request.source.rglob("*"))]:
+        if path.is_symlink():
+            continue
+        name = path.relative_to(request.source.parent).as_posix()
+        info = archive.gettarinfo(str(path), name)
+        if path.is_file():
+            with path.open("rb") as stream:
+                reader = ProgressReader(
+                    stream, lambda count, item=path: update(count, item)
+                )
+                archive.addfile(info, reader)
+        else:
+            archive.addfile(info)
 
 
 def _compress_stream(
@@ -230,8 +264,10 @@ def decompress(
         if request.verify
         else detect_algorithm(archive_path)
     )
-    is_container = algorithm is CompressionAlgorithm.ZIP or tarfile.is_tarfile(
-        archive_path
+    is_container = (
+        algorithm is CompressionAlgorithm.ZIP
+        or tarfile.is_tarfile(archive_path)
+        or (algorithm is CompressionAlgorithm.ZSTD and _zstd_contains_tar(archive_path))
     )
     temporary = (
         _temporary_directory(request.destination)
@@ -264,6 +300,7 @@ def decompress(
         lzma.LZMAError,
         tarfile.TarError,
         zipfile.BadZipFile,
+        zstandard.ZstdError,
     ) as error:
         clear_destination(temporary)
         raise_filesystem_error(error, request.destination)
@@ -309,12 +346,32 @@ def _extract_zip(
     return count
 
 
+def _zstd_contains_tar(path: Path) -> bool:
+    """Return True when a Zstandard stream decompresses to a tar archive."""
+    try:
+        with zstandard.open(path, "rb") as stream:
+            head = stream.read(512)
+    except OSError:
+        return False
+    return len(head) > 262 and head[257:262] == b"ustar"
+
+
 def _extract_tar(
     source: Path, destination: Path, update: Callable[[int, Path], None]
 ) -> int:
     """Extract regular tar entries with traversal and link checks."""
     count = 0
-    with tarfile.open(source, "r:*") as archive:
+    with ExitStack() as stack:
+        with source.open("rb") as probe:
+            signature = probe.read(4)
+        if signature.startswith(b"\x28\xb5\x2f\xfd"):
+            raw = stack.enter_context(source.open("rb"))
+            decompressed = stack.enter_context(
+                zstandard.ZstdDecompressor().stream_reader(raw)
+            )
+            archive = stack.enter_context(tarfile.open(fileobj=decompressed, mode="r|"))
+        else:
+            archive = stack.enter_context(tarfile.open(source, "r:*"))
         for member in archive:
             target = safe_target(destination, member.name)
             if member.issym() or member.islnk():

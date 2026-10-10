@@ -6,6 +6,7 @@ from enum import StrEnum
 class CompressionAlgorithm(StrEnum):
     """Lossless archive and stream formats supported by LS Compressor."""
 
+    ZSTD = "zstd"
     ZIP = "zip"
     XZ = "xz"
     GZIP = "gzip"
@@ -15,6 +16,7 @@ class CompressionAlgorithm(StrEnum):
     def display_name(self) -> str:
         """Return the human-readable name for the algorithm."""
         names = {
+            self.ZSTD: "Zstandard",
             self.ZIP: "ZIP (Deflate)",
             self.XZ: "LZMA (XZ)",
             self.GZIP: "GZIP",
@@ -26,6 +28,7 @@ class CompressionAlgorithm(StrEnum):
         """Return the conventional output suffix for a source type."""
         if is_directory:
             suffixes = {
+                self.ZSTD: ".tar.zst",
                 self.ZIP: ".zip",
                 self.XZ: ".tar.xz",
                 self.GZIP: ".tar.gz",
@@ -33,6 +36,7 @@ class CompressionAlgorithm(StrEnum):
             }
         else:
             suffixes = {
+                self.ZSTD: ".zst",
                 self.ZIP: ".zip",
                 self.XZ: ".xz",
                 self.GZIP: ".gz",

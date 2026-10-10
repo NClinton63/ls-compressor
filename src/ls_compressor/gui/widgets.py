@@ -624,7 +624,7 @@ class SettingsDialog(QWidget):
         algorithm = (
             CompressionAlgorithm(value)
             if value is not None
-            else CompressionAlgorithm.ZIP
+            else CompressionAlgorithm.ZSTD
         )
         preference = (
             OutputLocationPreference.SAME_FOLDER
@@ -672,7 +672,7 @@ class SettingsDialog(QWidget):
             path=Path(folder),
             output_folder=Path(output),
             operation=WatchOperationType.COMPRESS,
-            algorithm=CompressionAlgorithm.ZIP,
+            algorithm=CompressionAlgorithm.ZSTD,
         )
         self._watch_list.addItem(self._watch_list_item(config))
 

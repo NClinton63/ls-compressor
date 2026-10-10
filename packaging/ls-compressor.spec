@@ -55,6 +55,8 @@ a = Analysis(
         "imageio_ffmpeg._utils",
         "watchdog",
         "watchdog.observers",
+        "zstandard",
+        "zstandard.backend_cffi",
         "cryptography",
         "cryptography.hazmat",
         "cryptography.hazmat.primitives",

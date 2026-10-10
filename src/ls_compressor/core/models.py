@@ -22,7 +22,7 @@ class CompressionRequest:
 
     source: Path
     destination: Path
-    algorithm: CompressionAlgorithm = CompressionAlgorithm.ZIP
+    algorithm: CompressionAlgorithm = CompressionAlgorithm.ZSTD
     compression_level: int | None = None
     overwrite: bool = False
     verify: bool = True

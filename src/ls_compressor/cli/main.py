@@ -65,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--algorithm",
         "-a",
         choices=[algorithm.value for algorithm in CompressionAlgorithm],
-        default=CompressionAlgorithm.ZIP.value,
+        default=CompressionAlgorithm.ZSTD.value,
     )
     compress_parser.add_argument("--level", "-l", type=int)
     compress_parser.add_argument("--password", "-p")
@@ -139,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--algorithm",
         "-a",
         choices=[algorithm.value for algorithm in CompressionAlgorithm],
-        default=CompressionAlgorithm.ZIP.value,
+        default=CompressionAlgorithm.ZSTD.value,
     )
     watch_parser.add_argument(
         "--level",

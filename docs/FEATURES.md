@@ -34,13 +34,18 @@ cli/ ─┼─> core/          (domain logic: compression, media, encryption, wa
 
 | Algorithm | Enum value | File output | Folder output |
 |-----------|-----------|-------------|---------------|
+| Zstandard (default) | `zstd` | `.zst` | `.tar.zst` |
 | ZIP (Deflate) | `zip` | `.zip` | `.zip` |
 | LZMA (XZ) | `xz` | `.xz` | `.tar.xz` |
 | GZIP | `gzip` | `.gz` | `.tar.gz` |
 | BZ2 | `bz2` | `.bz2` | `.tar.bz2` |
 
+- **Zstandard is the default algorithm** — modern, fast, strong ratios, with
+  full `.zst` stream and `.tar.zst` container support including integrity
+  verification and self-extracting launchers (which prompt for `pip install
+  zstandard` on machines without it).
 - Folder sources are automatically tar-bundled for stream formats
-  (XZ/GZIP/BZ2); ZIP archives directories natively.
+  (Zstd/XZ/GZIP/BZ2); ZIP archives directories natively.
 - Selectable compression level (0–9); a sensible per-algorithm default is used
   when omitted.
 - `overwrite` protection: operations refuse to clobber an existing destination

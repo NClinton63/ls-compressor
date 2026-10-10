@@ -128,6 +128,7 @@ def test_compress_with_password_and_decompress(tmp_path: Path) -> None:
         CompressionRequest(
             source=source,
             destination=encrypted,
+            algorithm=Algorithm.ZIP,
             password=PASSWORD,
         )
     )
@@ -154,6 +155,7 @@ def test_compress_self_extracting_py(tmp_path: Path) -> None:
         CompressionRequest(
             source=source,
             destination=launcher,
+            algorithm=Algorithm.ZIP,
             password=PASSWORD,
             self_extracting=True,
         )

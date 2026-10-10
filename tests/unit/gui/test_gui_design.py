@@ -276,7 +276,7 @@ def test_progress_delegate_pushes_data(qapp) -> None:
 def test_main_window_navigation_switches_stack(qapp) -> None:
     """Sidebar page requests update real stack pages and the active nav state."""
     window = MainWindow(AppSettings())
-    assert window._compress_page._subtitle_label.text() == "0 files · ZIP (Deflate)"
+    assert window._compress_page._subtitle_label.text() == "0 files · Zstandard"
     for index, button in enumerate(window._sidebar._buttons):
         window._sidebar.page_requested.emit(index)
         assert window._stack.currentIndex() == index

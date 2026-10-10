@@ -34,6 +34,7 @@ from ls_compressor.core.models import (
     OperationProgress,
     OperationResult,
 )
+from ls_compressor.core.passwords import PasswordStrength, password_strength
 from ls_compressor.core.progress import ProgressCallback, ProgressReporter
 from ls_compressor.core.verification import (
     detect_algorithm,
@@ -56,6 +57,7 @@ __all__ = [
     "OperationKind",
     "OperationProgress",
     "OperationResult",
+    "PasswordStrength",
     "ProgressCallback",
     "ProgressReporter",
     "UnsupportedFormatError",
@@ -70,6 +72,7 @@ __all__ = [
     "is_encrypted_file",
     "is_self_extracting_archive",
     "optimize_media",
+    "password_strength",
     "read_encrypted_extension",
     "self_extracting_extension",
     "verify_against_source",

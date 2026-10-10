@@ -233,3 +233,157 @@ def test_is_self_extracting_archive_rejects_plain_binary(tmp_path: Path) -> None
     blob = tmp_path / "program"
     blob.write_bytes(b"\x7fELF" + b"\x00" * 64)
     assert not is_self_extracting_archive(blob)
+
+
+def test_new_archives_record_argon2id_kdf_metadata(tmp_path: Path) -> None:
+    """New encrypted archives store Argon2id parameters in the header."""
+    from ls_compressor.core.encryption import _unpack_header
+
+    archive = tmp_path / "sample.zip"
+    archive.write_bytes(b"payload")
+    encrypted = tmp_path / "sample.lsenc"
+    encrypt_archive(
+        archive, encrypted, PASSWORD, algorithm=Algorithm.ZIP, is_directory=False
+    )
+
+    metadata, _, _, _ = _unpack_header(encrypted.read_bytes())
+
+    assert metadata["kdf"]["algo"] == "argon2id"
+    assert metadata["kdf"]["time_cost"] >= 1
+    assert metadata["kdf"]["memory_cost"] >= 19_456
+
+
+def test_legacy_pbkdf2_archive_still_decrypts(tmp_path: Path) -> None:
+    """Archives written before Argon2id (no kdf metadata) remain readable."""
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from ls_compressor.core.encryption import (
+        NONCE_LEN,
+        SALT_LEN,
+        _pack_header,
+    )
+
+    payload = b"legacy payload bytes"
+    salt = os.urandom(SALT_LEN)
+    nonce = os.urandom(NONCE_LEN)
+    ciphertext = AESGCM(derive_key(PASSWORD, salt)).encrypt(nonce, payload, None)
+    legacy = tmp_path / "legacy.lsenc"
+    legacy.write_bytes(_pack_header({"ext": ".zip"}, salt, nonce) + ciphertext)
+
+    restored = tmp_path / "restored.zip"
+    decrypt_archive(legacy, restored, PASSWORD)
+
+    assert restored.read_bytes() == payload
+
+
+def test_pbkdf2_metadata_iterations_are_honored(tmp_path: Path) -> None:
+    """Stored PBKDF2 iteration counts are used for decryption."""
+    import os
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    from ls_compressor.core.encryption import (
+        NONCE_LEN,
+        SALT_LEN,
+        _pack_header,
+    )
+
+    payload = b"pbkdf2 payload"
+    salt = os.urandom(SALT_LEN)
+    nonce = os.urandom(NONCE_LEN)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(), length=32, salt=salt, iterations=250_000
+    )
+    ciphertext = AESGCM(kdf.derive(PASSWORD.encode())).encrypt(nonce, payload, None)
+    archive = tmp_path / "pbkdf2.lsenc"
+    archive.write_bytes(
+        _pack_header(
+            {"ext": ".zip", "kdf": {"algo": "pbkdf2-sha256", "iterations": 250_000}},
+            salt,
+            nonce,
+        )
+        + ciphertext
+    )
+
+    restored = tmp_path / "restored.zip"
+    decrypt_archive(archive, restored, PASSWORD)
+
+    assert restored.read_bytes() == payload
+
+
+def test_aes_zip_roundtrip_requires_password(tmp_path: Path) -> None:
+    """WinZip-compatible AES archives extract only with the password."""
+    source = tmp_path / "report.txt"
+    source.write_text("confidential", encoding="utf-8")
+    archive = tmp_path / "report.zip"
+    restored = tmp_path / "restored"
+
+    from ls_compressor.core import EncryptionFormat
+
+    compress(
+        CompressionRequest(
+            source=source,
+            destination=archive,
+            algorithm=Algorithm.ZIP,
+            password=PASSWORD,
+            encryption_format=EncryptionFormat.ZIP_AES,
+        )
+    )
+
+    assert archive.exists()
+    assert not is_encrypted_file(archive)
+    with pytest.raises(EncryptionError):
+        decompress(DecompressionRequest(archive, restored))
+    decompress(DecompressionRequest(archive, restored, password=PASSWORD))
+    assert (restored / "report.txt").read_text(encoding="utf-8") == "confidential"
+
+
+def test_aes_7z_roundtrip_preserves_tree(tmp_path: Path) -> None:
+    """7z AES archives roundtrip a directory tree with the password."""
+    source = tmp_path / "folder"
+    (source / "nested").mkdir(parents=True)
+    (source / "a.txt").write_text("one", encoding="utf-8")
+    (source / "nested" / "b.txt").write_text("two", encoding="utf-8")
+    archive = tmp_path / "folder.7z"
+    restored = tmp_path / "restored"
+
+    from ls_compressor.core import EncryptionFormat
+
+    compress(
+        CompressionRequest(
+            source=source,
+            destination=archive,
+            algorithm=Algorithm.SEVENZ,
+            password=PASSWORD,
+            encryption_format=EncryptionFormat.SEVENZ,
+        )
+    )
+
+    decompress(DecompressionRequest(archive, restored, password=PASSWORD))
+    assert (restored / "folder" / "a.txt").read_text() == "one"
+    assert (restored / "folder" / "nested" / "b.txt").read_text() == "two"
+
+
+def test_self_extracting_requires_lse_container(tmp_path: Path) -> None:
+    """Self-extracting launchers are rejected for standard containers."""
+    source = tmp_path / "data.txt"
+    source.write_text("data", encoding="utf-8")
+
+    from ls_compressor.core import EncryptionFormat
+    from ls_compressor.core.exceptions import InvalidRequestError
+
+    with pytest.raises(InvalidRequestError, match="LS container"):
+        compress(
+            CompressionRequest(
+                source=source,
+                destination=tmp_path / "out.py",
+                algorithm=Algorithm.ZIP,
+                password=PASSWORD,
+                self_extracting=True,
+                encryption_format=EncryptionFormat.ZIP_AES,
+            )
+        )

@@ -10,6 +10,7 @@ from ls_compressor.core import (
     CompressionAlgorithm,
     CompressionRequest,
     DecompressionRequest,
+    EncryptionFormat,
     MediaFormat,
     MediaOptimizationMode,
     MediaOptimizationRequest,
@@ -54,6 +55,7 @@ class CompressionWorker(QRunnable):
         video_crf: int | None = None,
         password: str | None = None,
         self_extracting: bool = False,
+        encryption_format: EncryptionFormat = EncryptionFormat.LSE,
     ) -> None:
         """Initialize a worker for the supplied job description."""
         super().__init__()
@@ -70,6 +72,7 @@ class CompressionWorker(QRunnable):
         self.video_crf = video_crf
         self.password = password
         self.self_extracting = self_extracting
+        self.encryption_format = encryption_format
         self.signals = WorkerSignals()
 
     def run(self) -> None:
@@ -103,6 +106,7 @@ class CompressionWorker(QRunnable):
             verify=True,
             password=self.password,
             self_extracting=self.self_extracting,
+            encryption_format=self.encryption_format,
         )
         return compress(request, self._on_progress)
 

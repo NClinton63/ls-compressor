@@ -11,6 +11,8 @@ import tempfile
 import textwrap
 from pathlib import Path
 
+from argon2.low_level import Type as Argon2Type
+from argon2.low_level import hash_secret_raw
 from cryptography import exceptions as crypto_exceptions
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -22,20 +24,82 @@ from ls_compressor.core.exceptions import EncryptionError
 HEADER_MAGIC = b"LSE\x01"
 SALT_LEN = 16
 NONCE_LEN = 12
-ITERATIONS = 100_000
+LEGACY_ITERATIONS = 100_000
+ARGON2_TIME_COST = 3
+ARGON2_MEMORY_COST_KIB = 65_536
+ARGON2_PARALLELISM = 2
 STUB_MAGIC = b"LSEX"
 STUB_FOOTER_LEN = len(STUB_MAGIC) + 8
 
 
 def derive_key(password: str, salt: bytes) -> bytes:
-    """Derive a 32-byte AES-256 key from a UTF-8 password and salt."""
+    """Derive a legacy 32-byte PBKDF2 key for archives predating v1.2."""
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
-        iterations=ITERATIONS,
+        iterations=LEGACY_ITERATIONS,
     )
     return kdf.derive(password.encode("utf-8"))
+
+
+def derive_key_argon2id(
+    password: str,
+    salt: bytes,
+    *,
+    time_cost: int = ARGON2_TIME_COST,
+    memory_cost: int = ARGON2_MEMORY_COST_KIB,
+    parallelism: int = ARGON2_PARALLELISM,
+) -> bytes:
+    """Derive a 32-byte AES-256 key with Argon2id and explicit parameters."""
+    return hash_secret_raw(
+        password.encode("utf-8"),
+        salt,
+        time_cost=time_cost,
+        memory_cost=memory_cost,
+        parallelism=parallelism,
+        hash_len=32,
+        type=Argon2Type.ID,
+    )
+
+
+def _kdf_metadata() -> dict[str, object]:
+    """Return the Argon2id parameters recorded in new archive headers."""
+    return {
+        "algo": "argon2id",
+        "time_cost": ARGON2_TIME_COST,
+        "memory_cost": ARGON2_MEMORY_COST_KIB,
+        "parallelism": ARGON2_PARALLELISM,
+    }
+
+
+def _derive_key_from_metadata(
+    password: str, salt: bytes, metadata: dict[str, object]
+) -> bytes:
+    """Derive a key using the KDF parameters stored in archive metadata."""
+    kdf = metadata.get("kdf")
+    if kdf is None:
+        return derive_key(password, salt)
+    if not isinstance(kdf, dict):
+        raise EncryptionError("Encrypted archive key metadata is corrupt")
+    algo = kdf.get("algo")
+    if algo == "pbkdf2-sha256":
+        kdf_obj = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=int(kdf["iterations"]),
+        )
+        return kdf_obj.derive(password.encode("utf-8"))
+    if algo == "argon2id":
+        return derive_key_argon2id(
+            password,
+            salt,
+            time_cost=int(kdf["time_cost"]),
+            memory_cost=int(kdf["memory_cost"]),
+            parallelism=int(kdf["parallelism"]),
+        )
+    raise EncryptionError(f"Unsupported key derivation: {algo}")
 
 
 def is_encrypted_file(path: Path) -> bool:
@@ -108,9 +172,9 @@ def encrypt_archive(
     plaintext = archive_path.read_bytes()
     salt = os.urandom(SALT_LEN)
     nonce = os.urandom(NONCE_LEN)
-    key = derive_key(password, salt)
+    metadata: dict[str, object] = {"kdf": _kdf_metadata()}
+    key = _derive_key_from_metadata(password, salt, metadata)
     ciphertext = AESGCM(key).encrypt(nonce, plaintext, None)
-    metadata: dict[str, object] = {}
     if algorithm is not None:
         metadata["ext"] = _archive_extension(algorithm, is_directory=is_directory)
     output_path.write_bytes(_pack_header(metadata, salt, nonce) + ciphertext)
@@ -125,8 +189,8 @@ def decrypt_archive(
     if not password:
         raise EncryptionError("A password is required to decrypt an archive")
     data = encrypted_path.read_bytes()
-    _, salt, nonce, ciphertext = _unpack_header(data)
-    key = derive_key(password, salt)
+    metadata, salt, nonce, ciphertext = _unpack_header(data)
+    key = _derive_key_from_metadata(password, salt, metadata)
     try:
         plaintext = AESGCM(key).decrypt(nonce, ciphertext, None)
     except crypto_exceptions.InvalidTag as error:
@@ -174,13 +238,39 @@ def _launcher_script() -> str:
         _HEADER = b"LSE\x01"
         _SALT_LEN = 16
         _NONCE_LEN = 12
-        _ITERATIONS = 100000
+        _LEGACY_ITERATIONS = 100000
 
-        def _derive_key(password, salt):
-            kdf = PBKDF2HMAC(
-                algorithm=hashes.SHA256(), length=32, salt=salt, iterations=_ITERATIONS
-            )
-            return kdf.derive(password.encode("utf-8"))
+        def _derive_key(password, salt, metadata):
+            kdf = metadata.get("kdf")
+            if kdf is None or kdf.get("algo") == "pbkdf2-sha256":
+                iterations = (
+                    _LEGACY_ITERATIONS if kdf is None else int(kdf["iterations"])
+                )
+                pbkdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=salt,
+                    iterations=iterations,
+                )
+                return pbkdf.derive(password.encode("utf-8"))
+            if kdf.get("algo") == "argon2id":
+                try:
+                    from argon2.low_level import Type, hash_secret_raw
+                except ImportError:
+                    sys.exit(
+                        "This archive requires the 'argon2-cffi' package: "
+                        "pip install argon2-cffi"
+                    )
+                return hash_secret_raw(
+                    password.encode("utf-8"),
+                    salt,
+                    time_cost=int(kdf["time_cost"]),
+                    memory_cost=int(kdf["memory_cost"]),
+                    parallelism=int(kdf["parallelism"]),
+                    hash_len=32,
+                    type=Type.ID,
+                )
+            raise ValueError("Unsupported key derivation: " + str(kdf.get("algo")))
 
         def _decrypt(payload, password):
             if not payload.startswith(_HEADER):
@@ -195,7 +285,7 @@ def _launcher_script() -> str:
             nonce = payload[offset:offset + _NONCE_LEN]
             offset += _NONCE_LEN
             ciphertext = payload[offset:]
-            aesgcm = AESGCM(_derive_key(password, salt))
+            aesgcm = AESGCM(_derive_key(password, salt, metadata))
             return aesgcm.decrypt(nonce, ciphertext, None), metadata
 
         def _extract(plaintext, ext, dest):

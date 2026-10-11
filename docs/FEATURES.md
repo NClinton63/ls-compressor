@@ -255,6 +255,7 @@ Entry point: `ls-compressor` (also `python -m ls_compressor`). Global flags:
 | `media SRC DEST` | Optimize image/video. Flags: `--mode lossless|lossy`, `--quality`, `--video-preset`, `--video-crf`, `-f`, `-q` |
 | `watch FOLDER -o OUT` | Foreground hot-folder watcher. Flags: `--operation`, `-a`, `-l`, `--media-mode`, `-p`, `--self-extracting`, `--recursive/--no-recursive`, `-q` |
 | `shell install|uninstall|status` | Manage OS context-menu integration (see below) |
+| `completions SHELL` | Print a completion script for `bash`, `zsh`, or `fish` — generated from the parser, so it always reflects the current flags |
 
 Live progress percentage is rendered to stderr; a stable key-value summary is
 printed on completion. `compress`, `decompress`, `verify`, `list`, and

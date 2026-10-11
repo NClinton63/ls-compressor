@@ -1,7 +1,7 @@
 """GUI-independent compression domain types and services."""
 
 from ls_compressor.core.algorithms import CompressionAlgorithm
-from ls_compressor.core.compressor import compress, decompress
+from ls_compressor.core.compressor import compress, decompress, plan_compression
 from ls_compressor.core.encryption import (
     create_self_extracting_archive,
     decrypt_archive,
@@ -32,6 +32,7 @@ from ls_compressor.core.media import (
     optimize_media,
 )
 from ls_compressor.core.models import (
+    CompressionPlan,
     CompressionPreset,
     CompressionRequest,
     DecompressionRequest,
@@ -39,6 +40,7 @@ from ls_compressor.core.models import (
     OperationKind,
     OperationProgress,
     OperationResult,
+    PlanMember,
 )
 from ls_compressor.core.passwords import PasswordStrength, password_strength
 from ls_compressor.core.progress import ProgressCallback, ProgressReporter
@@ -60,6 +62,7 @@ __all__ = [
     "ArchiveEntry",
     "CompressionAlgorithm",
     "CompressionError",
+    "CompressionPlan",
     "CompressionPreset",
     "CompressionRequest",
     "DecompressionRequest",
@@ -74,6 +77,7 @@ __all__ = [
     "OperationProgress",
     "OperationResult",
     "PasswordStrength",
+    "PlanMember",
     "ProgressCallback",
     "ProgressReporter",
     "UnsupportedFormatError",
@@ -94,6 +98,7 @@ __all__ = [
     "optimize_media",
     "parse_size",
     "password_strength",
+    "plan_compression",
     "read_encrypted_extension",
     "self_extracting_extension",
     "split_archive",

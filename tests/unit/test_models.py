@@ -93,6 +93,56 @@ def test_filesystem_ignore_pattern_matching(tmp_path: Path) -> None:
     assert load_ignore_patterns(tmp_path / "missing") == ()
 
 
+def test_plan_compression_reports_members_without_writing(
+    tmp_path: Path,
+) -> None:
+    """plan_compression validates the request and lists planned members."""
+    from ls_compressor.core import plan_compression
+
+    source = tmp_path / "folder"
+    source.mkdir()
+    (source / "a.txt").write_bytes(b"a" * 10)
+    (source / "b.txt").write_bytes(b"b" * 20)
+    (source / "skip.tmp").write_bytes(b"junk")
+    destination = tmp_path / "folder.tar.zst"
+
+    plan = plan_compression(
+        CompressionRequest(
+            source=source,
+            destination=destination,
+            exclude=("*.tmp",),
+            split_size=15,
+        )
+    )
+
+    names = [member.name for member in plan.members]
+    assert "folder/a.txt" in names and "folder/b.txt" in names
+    assert not any("skip.tmp" in name for name in names)
+    assert plan.total_bytes == 30
+    assert plan.split_volumes == 2
+    assert plan.destination_exists is False
+    assert not destination.exists()
+
+
+def test_plan_compression_rejects_invalid_requests(tmp_path: Path) -> None:
+    """plan_compression applies the same validation as compress."""
+    from ls_compressor.core import plan_compression
+    from ls_compressor.core.exceptions import InvalidRequestError
+
+    source = tmp_path / "f.txt"
+    source.write_text("x", "utf-8")
+    with pytest.raises(InvalidRequestError):
+        plan_compression(
+            CompressionRequest(
+                source=source,
+                destination=tmp_path / "f.lsex",
+                password="pw",
+                self_extracting=True,
+                split_size=100,
+            )
+        )
+
+
 def test_compression_presets_resolve_algorithm_and_level() -> None:
     """Each preset maps to a valid write-capable algorithm and level."""
     from ls_compressor.core.models import CompressionPreset

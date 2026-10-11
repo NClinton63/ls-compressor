@@ -48,11 +48,13 @@ from ls_compressor.core.filesystem import (
     source_size,
 )
 from ls_compressor.core.models import (
+    CompressionPlan,
     CompressionRequest,
     DecompressionRequest,
     EncryptionFormat,
     OperationKind,
     OperationResult,
+    PlanMember,
 )
 from ls_compressor.core.progress import (
     ProgressCallback,
@@ -85,11 +87,8 @@ def _stream_opener(algorithm: CompressionAlgorithm):
     }[algorithm]
 
 
-def compress(
-    request: CompressionRequest, callback: ProgressCallback | None = None
-) -> OperationResult:
-    """Compress a file or directory and verify integrity before success."""
-    started = time.monotonic()
+def _validate_compression_request(request: CompressionRequest) -> None:
+    """Raise when a compression request cannot be carried out."""
     encrypted_7z = (
         request.password is not None
         and request.encryption_format is EncryptionFormat.SEVENZ
@@ -130,6 +129,42 @@ def compress(
             raise InvalidRequestError(
                 "Sources must have unique names to share one archive"
             )
+
+
+def plan_compression(request: CompressionRequest) -> CompressionPlan:
+    """Describe the members a request would archive without writing output."""
+    _validate_compression_request(request)
+    members = [
+        PlanMember(
+            name=name,
+            size=path.stat().st_size if path.is_file() else 0,
+            is_dir=path.is_dir(),
+        )
+        for _, path, name in _iter_source_members(request)
+    ]
+    if not any(not member.is_dir for member in members):
+        raise InvalidRequestError("All sources were excluded by ignore patterns")
+    total = sum(member.size for member in members)
+    split_volumes = 0
+    if request.split_size is not None:
+        split_volumes = max(1, -(-total // request.split_size))
+    return CompressionPlan(
+        destination=request.destination,
+        algorithm=request.algorithm,
+        members=tuple(members),
+        total_bytes=total,
+        destination_exists=request.destination.exists(),
+        split_volumes=split_volumes,
+    )
+
+
+def compress(
+    request: CompressionRequest, callback: ProgressCallback | None = None
+) -> OperationResult:
+    """Compress a file or directory and verify integrity before success."""
+    started = time.monotonic()
+    _validate_compression_request(request)
+    sources = request.all_sources
     prepare_destination(request.destination, overwrite=request.overwrite)
     members = [
         (path, name)

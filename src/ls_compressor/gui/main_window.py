@@ -37,6 +37,8 @@ from ls_compressor.core import (
     password_strength,
     self_extracting_extension,
 )
+from ls_compressor.core.exceptions import InvalidRequestError
+from ls_compressor.core.volumes import is_volume, parse_size, volume_base
 from ls_compressor.core.watch import (
     WatchEvent,
     WatchOperationType,
@@ -197,6 +199,12 @@ class CompressPage(_Page):
         self._exclude = QLineEdit(self)
         self._exclude.setPlaceholderText("Exclude globs (*.tmp, build/)")
         self._exclude.setMaximumWidth(170)
+        self._split = QLineEdit(self)
+        self._split.setPlaceholderText("Split size (e.g. 100M)")
+        self._split.setMaximumWidth(130)
+        self._split.setToolTip(
+            "Split the archive into fixed-size volumes named .001, .002, ..."
+        )
         self._password.textChanged.connect(self._update_password_strength)
         self._strength_label = QLabel("", self)
         self._strength_label.setMinimumWidth(52)
@@ -220,6 +228,7 @@ class CompressPage(_Page):
         controls.addWidget(self._password)
         controls.addWidget(self._strength_label)
         controls.addWidget(self._exclude)
+        controls.addWidget(self._split)
         controls.addWidget(self._encryption_combo)
         controls.addWidget(self._self_extracting)
         controls.addWidget(self._single_archive)
@@ -278,6 +287,13 @@ class CompressPage(_Page):
         if not text:
             return ()
         return tuple(part.strip() for part in text.split(",") if part.strip())
+
+    def split_size(self) -> int | None:
+        """Return the requested volume size in bytes, or None when unset."""
+        text = self._split.text().strip()
+        if not text:
+            return None
+        return parse_size(text)
 
     def _create_stats(self) -> list[StatCard]:
         return [
@@ -685,11 +701,24 @@ class MainWindow(QMainWindow):
         self_extracting = False
         encryption_format = EncryptionFormat.LSE
         exclude: tuple[str, ...] = ()
+        split_size: int | None = None
         if kind == GuiJobKind.COMPRESS:
             password = self._compress_page.password().strip() or None
             self_extracting = self._compress_page.is_self_extracting()
             encryption_format = self._compress_page.selected_encryption_format()
             exclude = self._compress_page.exclude_patterns()
+            try:
+                split_size = self._compress_page.split_size()
+            except InvalidRequestError as error:
+                QMessageBox.warning(self, "Invalid split size", str(error))
+                return
+            if self_extracting and split_size is not None:
+                QMessageBox.warning(
+                    self,
+                    "Unsupported combination",
+                    "Self-extracting archives cannot be split into volumes.",
+                )
+                return
             if self_extracting and not password:
                 dialog = QMessageBox(self)
                 dialog.setIcon(QMessageBox.Icon.Warning)
@@ -726,6 +755,7 @@ class MainWindow(QMainWindow):
                 password,
                 self_extracting,
                 encryption_format,
+                split_size,
             )
             return
 
@@ -777,6 +807,7 @@ class MainWindow(QMainWindow):
                 self_extracting=self_extracting,
                 encryption_format=encryption_format,
                 exclude=exclude,
+                split_size=split_size,
             )
             table.convert_row_to_job(row, job_id, kind, destination, algorithm)
 
@@ -788,6 +819,7 @@ class MainWindow(QMainWindow):
         password: str | None,
         self_extracting: bool,
         encryption_format: EncryptionFormat,
+        split_size: int | None,
     ) -> None:
         """Enqueue one job that archives several pending sources together."""
         sources = [source for _, source in rows_to_queue]
@@ -816,6 +848,7 @@ class MainWindow(QMainWindow):
             encryption_format=encryption_format,
             extra_sources=tuple(sources[1:]),
             exclude=self._compress_page.exclude_patterns(),
+            split_size=split_size,
         )
         table.convert_row_to_job(
             rows_to_queue[0][0], job_id, GuiJobKind.COMPRESS, destination, algorithm
@@ -863,6 +896,8 @@ class MainWindow(QMainWindow):
             return base / (source.stem + "-optimized" + suffix)
         if source.is_dir():
             return base / source.name
+        if is_volume(source):
+            source = volume_base(source)
         name = source.name
         for suffix in (
             ".tar.bz2",

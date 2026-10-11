@@ -58,6 +58,7 @@ class CompressionWorker(QRunnable):
         encryption_format: EncryptionFormat = EncryptionFormat.LSE,
         extra_sources: tuple[Path, ...] = (),
         exclude: tuple[str, ...] = (),
+        split_size: int | None = None,
     ) -> None:
         """Initialize a worker for the supplied job description."""
         super().__init__()
@@ -67,6 +68,7 @@ class CompressionWorker(QRunnable):
         self.destination = destination
         self.extra_sources = extra_sources
         self.exclude = exclude
+        self.split_size = split_size
         self.algorithm = algorithm
         self.compression_level = compression_level
         self.media_format = media_format
@@ -113,6 +115,7 @@ class CompressionWorker(QRunnable):
             encryption_format=self.encryption_format,
             extra_sources=self.extra_sources,
             exclude=self.exclude,
+            split_size=self.split_size,
         )
         return compress(request, self._on_progress)
 

@@ -74,6 +74,13 @@ cli/ ─┼─> core/          (domain logic: compression, media, encryption, wa
   level 3 (default), Maximum → XZ level 9. CLI `--preset` overrides
   `--algorithm`/`--level`; the GUI preset combo overrides the algorithm
   dropdown when set to anything but "Custom".
+- **Split volumes**: `CompressionRequest.split_size` (CLI `--split 100M`, GUI
+  "Split size" field) writes the finished archive as numbered volumes
+  `DEST.001`, `DEST.002`, … — applied after encryption, so `.lsenc` output
+  splits too (self-extracting archives cannot be split). Extraction,
+  `verify`, and `list` join the set automatically from any volume; missing
+  parts are reported as errors. `core/volumes.py` also exposes
+  `parse_size` (e.g. `100M`, `1.5GiB`).
 - `overwrite` protection: operations refuse to clobber an existing destination
   unless `force`/`--force` is set.
 - Source existence/destination preparation handled centrally in

@@ -52,6 +52,7 @@ class GuiJob:
     encryption_format: EncryptionFormat = EncryptionFormat.LSE
     extra_sources: tuple[Path, ...] = ()
     exclude: tuple[str, ...] = ()
+    split_size: int | None = None
     progress_percent: float = 0.0
     current_file: Path | None = None
     result: OperationResult | None = None

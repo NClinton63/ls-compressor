@@ -28,6 +28,7 @@ from ls_compressor.core.verification import (
     _zstd_contains_tar,
     detect_algorithm,
 )
+from ls_compressor.core.volumes import is_volume, join_volumes
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +152,10 @@ def list_archive(
     decrypted to a temporary file when ``password`` is supplied.
     """
     path = Path(path)
+    if is_volume(path):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            joined = join_volumes(path, Path(temp_dir))
+            return list_archive(joined, password=password)
     if is_encrypted_file(path) or is_self_extracting_archive(path):
         if not password:
             raise EncryptionError("A password is required to list this archive")

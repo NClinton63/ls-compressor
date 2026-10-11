@@ -1,6 +1,7 @@
 """Headless command-line interface backed by the compression core."""
 
 import argparse
+import json
 import logging
 import sys
 import tempfile
@@ -122,16 +123,19 @@ def build_parser() -> argparse.ArgumentParser:
         "DEST.002, ... (e.g. --split 100M)",
     )
     _add_operation_options(compress_parser)
+    _add_json_option(compress_parser)
 
     decompress_parser = subparsers.add_parser("decompress", help="extract an archive")
     decompress_parser.add_argument("source", type=Path)
     decompress_parser.add_argument("destination", type=Path)
     decompress_parser.add_argument("--password", "-p")
     _add_operation_options(decompress_parser)
+    _add_json_option(decompress_parser)
 
     verify_parser = subparsers.add_parser("verify", help="verify archive integrity")
     verify_parser.add_argument("source", type=Path)
     verify_parser.add_argument("--password", "-p")
+    _add_json_option(verify_parser)
 
     list_parser = subparsers.add_parser(
         "list",
@@ -140,6 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     list_parser.add_argument("source", type=Path)
     list_parser.add_argument("--password", "-p")
+    _add_json_option(list_parser)
 
     media_parser = subparsers.add_parser(
         "media", help="optimize a media asset (image or video)"
@@ -172,6 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
     media_parser.add_argument(
         "--quiet", "-q", action="store_true", help="suppress progress output"
     )
+    _add_json_option(media_parser)
 
     watch_parser = subparsers.add_parser(
         "watch", help="monitor a folder and process new files automatically"
@@ -256,6 +262,51 @@ def _add_operation_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--quiet", "-q", action="store_true", help="suppress progress output"
     )
+
+
+def _add_json_option(parser: argparse.ArgumentParser) -> None:
+    """Add the machine-readable output flag to a subcommand."""
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the result as JSON on stdout and suppress progress",
+    )
+
+
+def _emit_json(payload: dict) -> None:
+    """Print a JSON document to standard output."""
+    print(json.dumps(payload, indent=2))
+
+
+def _operation_result_dict(result: OperationResult) -> dict:
+    """Serialize a compression/decompression result for JSON output."""
+    return {
+        "operation": result.kind.value,
+        "source": str(result.source),
+        "destination": str(result.destination),
+        "algorithm": result.algorithm.value,
+        "source_size": result.source_size,
+        "output_size": result.output_size,
+        "elapsed_seconds": result.elapsed_seconds,
+        "files_processed": result.files_processed,
+        "compression_ratio": result.compression_ratio,
+        "integrity_verified": result.integrity_verified,
+    }
+
+
+def _media_result_dict(result: MediaOptimizationResult) -> dict:
+    """Serialize a media optimization result for JSON output."""
+    return {
+        "operation": result.kind.value,
+        "source": str(result.source),
+        "destination": str(result.destination),
+        "media_format": result.media_format.value,
+        "source_size": result.source_size,
+        "output_size": result.output_size,
+        "elapsed_seconds": result.elapsed_seconds,
+        "compression_ratio": result.compression_ratio,
+        "integrity_verified": result.integrity_verified,
+    }
 
 
 def _progress(update: OperationProgress) -> None:
@@ -371,6 +422,26 @@ def _run(args: argparse.Namespace) -> None:
         algorithm, entries = list_archive(args.source, password=args.password)
         files = [entry for entry in entries if not entry.is_dir]
         total = sum(entry.uncompressed_size or 0 for entry in files)
+        if args.json:
+            _emit_json(
+                {
+                    "operation": "list",
+                    "source": str(args.source),
+                    "algorithm": algorithm.value,
+                    "file_count": len(files),
+                    "total_uncompressed": total,
+                    "entries": [
+                        {
+                            "name": entry.name,
+                            "uncompressed_size": entry.uncompressed_size,
+                            "compressed_size": entry.compressed_size,
+                            "is_dir": entry.is_dir,
+                        }
+                        for entry in entries
+                    ],
+                }
+            )
+            return
         print(f"{algorithm.display_name} archive: {args.source}")
         print(format_listing(entries, human_size=_human_size))
         print(f"{len(files)} files, {_human_size(total)} uncompressed")
@@ -401,10 +472,24 @@ def _run(args: argparse.Namespace) -> None:
         _LOGGER.info(
             "Operation succeeded command=%s algorithm=%s", args.command, algorithm.value
         )
-        print(f"Archive is valid ({algorithm.display_name}): {args.source}")
+        if args.json:
+            _emit_json(
+                {
+                    "operation": "verify",
+                    "source": str(args.source),
+                    "algorithm": algorithm.value,
+                    "valid": True,
+                }
+            )
+        else:
+            print(f"Archive is valid ({algorithm.display_name}): {args.source}")
         return
 
-    callback = None if getattr(args, "quiet", False) else _progress
+    callback = (
+        None
+        if getattr(args, "quiet", False) or getattr(args, "json", False)
+        else _progress
+    )
     if args.command == "media":
         result = optimize_media(
             MediaOptimizationRequest(
@@ -421,7 +506,10 @@ def _run(args: argparse.Namespace) -> None:
         if callback is not None:
             print(file=sys.stderr)
         _LOGGER.info("Operation succeeded command=%s", args.command)
-        _print_media_result(result)
+        if args.json:
+            _emit_json(_media_result_dict(result))
+        else:
+            _print_media_result(result)
         return
 
     if args.command == "watch":
@@ -472,7 +560,10 @@ def _run(args: argparse.Namespace) -> None:
     if callback is not None:
         print(file=sys.stderr)
     _LOGGER.info("Operation succeeded command=%s", args.command)
-    _print_result(result)
+    if getattr(args, "json", False):
+        _emit_json(_operation_result_dict(result))
+    else:
+        _print_result(result)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -488,7 +579,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.command,
             type(error).__name__,
         )
-        print(f"Error: {error}", file=sys.stderr)
+        if getattr(args, "json", False):
+            print(
+                json.dumps(
+                    {
+                        "operation": args.command,
+                        "error": str(error),
+                        "error_type": type(error).__name__,
+                    }
+                ),
+                file=sys.stderr,
+            )
+        else:
+            print(f"Error: {error}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         _LOGGER.warning("Operation cancelled command=%s", args.command)

@@ -1,6 +1,7 @@
 """Unit tests for command-line argument handling and output."""
 
 import importlib
+import json
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -116,6 +117,77 @@ def test_media_command_optimizes_image_and_prints_summary(
     assert "Format: PNG Image" in captured.out
     assert "Savings:" in captured.out
     assert captured.err == ""
+
+
+def test_json_compress_emits_parseable_result(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--json prints the operation result as a JSON document on stdout."""
+    source = tmp_path / "source.txt"
+    source.write_text("compress me", encoding="utf-8")
+    archive = tmp_path / "archive.zip"
+
+    status = main(["compress", str(source), str(archive), "-a", "zip", "--json"])
+    captured = capsys.readouterr()
+
+    assert status == 0
+    payload = json.loads(captured.out)
+    assert payload["operation"] == "compress"
+    assert payload["algorithm"] == "zip"
+    assert payload["source"] == str(source)
+    assert payload["destination"] == str(archive)
+    assert payload["files_processed"] == 1
+    assert payload["integrity_verified"] is True
+    assert payload["source_size"] > 0
+
+
+def test_json_verify_and_list_emit_structured_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--json verify and list report algorithm and entries as JSON."""
+    source = tmp_path / "source.txt"
+    source.write_text("content", encoding="utf-8")
+    archive = tmp_path / "archive.zip"
+    assert main(["compress", str(source), str(archive), "-a", "zip", "-q"]) == 0
+    capsys.readouterr()
+
+    assert main(["verify", str(archive), "--json"]) == 0
+    verify = json.loads(capsys.readouterr().out)
+    assert verify == {
+        "operation": "verify",
+        "source": str(archive),
+        "algorithm": "zip",
+        "valid": True,
+    }
+
+    assert main(["list", str(archive), "--json"]) == 0
+    listing = json.loads(capsys.readouterr().out)
+    assert listing["algorithm"] == "zip"
+    assert listing["file_count"] == 1
+    assert listing["entries"][0]["name"] == "source.txt"
+    assert listing["entries"][0]["is_dir"] is False
+
+
+def test_json_error_emits_json_on_stderr(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Failures in --json mode produce a JSON error object and exit one."""
+    status = main(
+        [
+            "compress",
+            str(tmp_path / "missing"),
+            str(tmp_path / "out.zip"),
+            "--json",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert status == 1
+    payload = json.loads(captured.err)
+    assert payload["operation"] == "compress"
+    assert payload["error_type"]
+    assert "Source does not exist" in payload["error"]
+    assert captured.out == ""
 
 
 def test_media_command_reports_unsupported_format(

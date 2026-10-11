@@ -257,8 +257,14 @@ Entry point: `ls-compressor` (also `python -m ls_compressor`). Global flags:
 | `shell install|uninstall|status` | Manage OS context-menu integration (see below) |
 
 Live progress percentage is rendered to stderr; a stable key-value summary is
-printed on completion. Exit codes: `0` success, `1` operation error, `130`
-Ctrl-C.
+printed on completion. `compress`, `decompress`, `verify`, `list`, and
+`media` also accept `--json`, which emits the result as a JSON document on
+stdout (progress suppressed) and prints a JSON error object to stderr on
+failure — suitable for scripting. `compress`/`decompress` also accept
+`--dry-run` (combines with `--json`), reporting planned members, totals,
+split-volume estimates, and existing-destination warnings without writing
+output — backed by `core.plan_compression`. Exit codes: `0` success, `1`
+operation error, `130` Ctrl-C.
 
 **Shell integration** (`infrastructure/shell_integration.py`) registers
 per-user "Compress/Extract with LS Compressor" entries — no admin rights:

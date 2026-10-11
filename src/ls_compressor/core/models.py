@@ -100,6 +100,27 @@ class DecompressionRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanMember:
+    """Describe one member a compression operation would archive."""
+
+    name: str
+    size: int
+    is_dir: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CompressionPlan:
+    """Describe what a compression request would do without writing output."""
+
+    destination: Path
+    algorithm: CompressionAlgorithm
+    members: tuple[PlanMember, ...]
+    total_bytes: int
+    destination_exists: bool
+    split_volumes: int
+
+
+@dataclass(frozen=True, slots=True)
 class OperationProgress:
     """Represent an immutable progress update from a core operation."""
 

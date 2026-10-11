@@ -81,6 +81,7 @@ class CompressionRequest:
     extra_sources: tuple[Path, ...] = ()
     exclude: tuple[str, ...] = ()
     split_size: int | None = None
+    threads: int | None = None
 
     @property
     def all_sources(self) -> tuple[Path, ...]:

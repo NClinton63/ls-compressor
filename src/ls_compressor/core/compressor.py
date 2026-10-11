@@ -70,11 +70,25 @@ from ls_compressor.core.verification import (
 from ls_compressor.core.volumes import is_volume, join_volumes, split_archive
 
 
-def _zstd_open(path: Path, mode: str, level: int | None = None):
+def _zstd_threads(request: CompressionRequest) -> int:
+    """Return the Zstandard worker count for a request.
+
+    ``threads=None``/``1`` stays single-threaded; ``0`` or negative maps to
+    zstandard's -1 (all available cores); higher values set the worker count.
+    """
+    threads = request.threads
+    if threads is None or threads == 1:
+        return 0
+    return -1 if threads <= 0 else threads
+
+
+def _zstd_open(path: Path, mode: str, level: int | None = None, threads: int = 0):
     """Open a Zstandard stream, applying a compression level for writes."""
     if "r" in mode:
         return zstandard.open(path, mode)
-    compressor = zstandard.ZstdCompressor(level=level if level is not None else 3)
+    compressor = zstandard.ZstdCompressor(
+        level=level if level is not None else 3, threads=threads
+    )
     return zstandard.open(path, mode, cctx=compressor)
 
 
@@ -352,7 +366,9 @@ def _compress_tar(
     kwargs = _compression_kwargs(request)
     if request.algorithm is CompressionAlgorithm.ZSTD:
         level = kwargs.get("level", 3)
-        compressor = zstandard.ZstdCompressor(level=level)
+        compressor = zstandard.ZstdCompressor(
+            level=level, threads=_zstd_threads(request)
+        )
         with (
             temporary.open("wb") as stream,
             compressor.stream_writer(stream) as compressed,
@@ -392,6 +408,8 @@ def _compress_stream(
 ) -> None:
     """Compress one file as an XZ, GZIP, or BZ2 stream."""
     kwargs = _compression_kwargs(request)
+    if request.algorithm is CompressionAlgorithm.ZSTD:
+        kwargs["threads"] = _zstd_threads(request)
     if request.algorithm is CompressionAlgorithm.GZIP:
         destination_stream = gzip.GzipFile(
             filename=str(temporary),

@@ -23,7 +23,8 @@ interface or the command line.
 - Persistent user settings and recent folders.
 - Cross-platform: macOS `.app`, Windows `.exe`, and Linux executable.
 
-See [docs/FEATURES.md](docs/FEATURES.md) for detailed feature documentation.
+See [docs/FEATURES.md](docs/FEATURES.md) for detailed feature documentation
+and [docs/API.md](docs/API.md) for the public `ls_compressor.core` Python API.
 
 ## Installation
 

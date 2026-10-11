@@ -37,6 +37,7 @@ from ls_compressor.core.exceptions import (
     EncryptionError,
     InvalidRequestError,
 )
+from ls_compressor.core.volumes import is_volume, join_volumes, parse_size
 from ls_compressor.core.watch import (
     WatchFolderConfig,
     WatchOperationType,
@@ -112,6 +113,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATTERN",
         help="exclude sources matching a glob pattern (repeatable); "
         ".lsignore files in source folders are also honored",
+    )
+    compress_parser.add_argument(
+        "--split",
+        metavar="SIZE",
+        help="split the output into fixed-size volumes named DEST.001, "
+        "DEST.002, ... (e.g. --split 100M)",
     )
     _add_operation_options(compress_parser)
 
@@ -339,25 +346,28 @@ def _run(args: argparse.Namespace) -> None:
         print(f"{len(files)} files, {_human_size(total)} uncompressed")
         return
     if args.command == "verify":
-        if is_encrypted_file(args.source) or is_self_extracting_archive(args.source):
-            if not args.password:
-                raise EncryptionError(
-                    "Encrypted archives require a password for verification"
-                )
-            with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = args.source
+            if is_volume(source):
+                source = join_volumes(source, Path(temp_dir))
+            if is_encrypted_file(source) or is_self_extracting_archive(source):
+                if not args.password:
+                    raise EncryptionError(
+                        "Encrypted archives require a password for verification"
+                    )
                 archive = Path(temp_dir) / "archive"
-                if is_self_extracting_archive(args.source):
+                if is_self_extracting_archive(source):
                     from ls_compressor.core.encryption import extract_payload
 
-                    payload = extract_payload(args.source)
+                    payload = extract_payload(source)
                     encrypted = Path(temp_dir) / "payload.lse"
                     encrypted.write_bytes(payload)
                     decrypt_archive(encrypted, archive, args.password)
                 else:
-                    decrypt_archive(args.source, archive, args.password)
+                    decrypt_archive(source, archive, args.password)
                 algorithm = verify_archive(archive)
-        else:
-            algorithm = verify_archive(args.source, password=args.password)
+            else:
+                algorithm = verify_archive(source, password=args.password)
         _LOGGER.info(
             "Operation succeeded command=%s algorithm=%s", args.command, algorithm.value
         )
@@ -410,6 +420,7 @@ def _run(args: argparse.Namespace) -> None:
                 encryption_format=EncryptionFormat(args.encryption),
                 extra_sources=tuple(sources[1:]),
                 exclude=tuple(args.exclude or ()),
+                split_size=parse_size(args.split) if args.split else None,
             ),
             callback,
         )

@@ -80,6 +80,7 @@ class CompressionRequest:
     encryption_format: EncryptionFormat = EncryptionFormat.LSE
     extra_sources: tuple[Path, ...] = ()
     exclude: tuple[str, ...] = ()
+    split_size: int | None = None
 
     @property
     def all_sources(self) -> tuple[Path, ...]:

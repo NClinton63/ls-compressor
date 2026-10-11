@@ -47,6 +47,14 @@ from ls_compressor.core.verification import (
     verify_against_source,
     verify_archive,
 )
+from ls_compressor.core.volumes import (
+    is_volume,
+    join_volumes,
+    parse_size,
+    split_archive,
+    volume_base,
+    volume_parts,
+)
 
 __all__ = [
     "ArchiveEntry",
@@ -80,11 +88,17 @@ __all__ = [
     "format_listing",
     "is_encrypted_file",
     "is_self_extracting_archive",
+    "is_volume",
+    "join_volumes",
     "list_archive",
     "optimize_media",
+    "parse_size",
     "password_strength",
     "read_encrypted_extension",
     "self_extracting_extension",
+    "split_archive",
     "verify_against_source",
     "verify_archive",
+    "volume_base",
+    "volume_parts",
 ]

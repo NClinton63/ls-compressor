@@ -64,6 +64,7 @@ from ls_compressor.core.verification import (
     verify_against_source,
     verify_archive,
 )
+from ls_compressor.core.volumes import is_volume, join_volumes, split_archive
 
 
 def _zstd_open(path: Path, mode: str, level: int | None = None):
@@ -104,6 +105,13 @@ def compress(
         raise InvalidRequestError(
             "Self-extracting archives require the LS container format"
         )
+    if request.split_size is not None:
+        if request.self_extracting:
+            raise InvalidRequestError(
+                "Self-extracting archives cannot be split into volumes"
+            )
+        if request.split_size < 1:
+            raise InvalidRequestError("Split size must be at least 1 byte")
     sources = request.all_sources
     for source in sources:
         ensure_source(source)
@@ -159,7 +167,17 @@ def compress(
             )
         if request.password and request.encryption_format is EncryptionFormat.LSE:
             temporary = _wrap_encrypted_output(request, temporary)
-        replace_path(temporary, request.destination, overwrite=request.overwrite)
+        if request.split_size is not None:
+            parts = split_archive(
+                temporary,
+                request.destination,
+                request.split_size,
+                overwrite=request.overwrite,
+            )
+            output_size = sum(part.stat().st_size for part in parts)
+        else:
+            replace_path(temporary, request.destination, overwrite=request.overwrite)
+            output_size = request.destination.stat().st_size
         progress.complete()
     except CompressionError:
         temporary.unlink(missing_ok=True)
@@ -173,7 +191,7 @@ def compress(
         request.destination,
         request.algorithm,
         total,
-        request.destination.stat().st_size,
+        output_size,
         time.monotonic() - started,
         len(files),
         request.verify,
@@ -354,7 +372,20 @@ def decompress(
     started = time.monotonic()
     ensure_source(request.source)
     prepare_destination(request.destination, overwrite=request.overwrite)
-    archive_path, archive_size = _archive_source(request)
+    with tempfile.TemporaryDirectory(
+        prefix=f".{request.destination.name}.", dir=request.destination.parent
+    ) as work_dir:
+        return _decompress(request, Path(work_dir), callback, started)
+
+
+def _decompress(
+    request: DecompressionRequest,
+    work_dir: Path,
+    callback: ProgressCallback | None,
+    started: float,
+) -> OperationResult:
+    """Run the extraction after resolving any joined volume input."""
+    archive_path, archive_size = _archive_source(request, work_dir)
     algorithm = (
         verify_archive(archive_path, password=request.password)
         if request.verify
@@ -652,22 +683,24 @@ def _wrap_encrypted_output(request: CompressionRequest, archive_path: Path) -> P
     return launcher
 
 
-def _archive_source(request: DecompressionRequest) -> tuple[Path, int]:
+def _archive_source(request: DecompressionRequest, work_dir: Path) -> tuple[Path, int]:
     """Resolve the real archive path and size, decrypting encrypted inputs first."""
-    if is_encrypted_file(request.source):
+    source = request.source
+    if is_volume(source):
+        source = join_volumes(source, work_dir)
+    if is_encrypted_file(source):
         if not request.password:
             raise EncryptionError("A password is required to decrypt this archive")
-        archive_path = _temporary_path(request.destination)
-        decrypt_archive(request.source, archive_path, request.password)
+        archive_path = work_dir / "decrypted"
+        decrypt_archive(source, archive_path, request.password)
         return archive_path, request.source.stat().st_size
-    if is_self_extracting_archive(request.source):
+    if is_self_extracting_archive(source):
         if not request.password:
             raise EncryptionError("A password is required to decrypt this archive")
-        payload = extract_payload(request.source)
-        with tempfile.TemporaryDirectory() as temp_dir:
-            encrypted = Path(temp_dir) / "payload.lse"
-            encrypted.write_bytes(payload)
-            archive_path = _temporary_path(request.destination)
-            decrypt_archive(encrypted, archive_path, request.password)
+        payload = extract_payload(source)
+        encrypted = work_dir / "payload.lse"
+        encrypted.write_bytes(payload)
+        archive_path = work_dir / "decrypted"
+        decrypt_archive(encrypted, archive_path, request.password)
         return archive_path, request.source.stat().st_size
-    return request.source, request.source.stat().st_size
+    return source, request.source.stat().st_size

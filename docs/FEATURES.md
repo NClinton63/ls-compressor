@@ -248,16 +248,29 @@ Entry point: `ls-compressor` (also `python -m ls_compressor`). Global flags:
 
 | Subcommand | Purpose |
 |------------|---------|
-| `compress SRC DEST` | Create an archive. Flags: `-a/--algorithm`, `-l/--level`, `-p/--password`, `--self-extracting`, `-f/--force`, `--no-verify`, `-q/--quiet` |
-| `decompress SRC DEST` | Extract an archive (incl. encrypted). Flags: `-p`, `-f`, `--no-verify`, `-q` |
-| `verify SRC` | Validate archive integrity; handles encrypted inputs with `-p` |
+| `compress SRC… DEST` | Create an archive from one or more sources. Flags: `-a/--algorithm`, `-l/--level`, `--preset`, `-p/--password`, `--encryption`, `--self-extracting`, `--exclude`, `--split`, `-f/--force`, `--no-verify`, `-q/--quiet` |
+| `decompress SRC DEST` | Extract an archive (incl. encrypted and `.NNN` volumes). Flags: `-p`, `-f`, `--no-verify`, `-q` |
+| `verify SRC` | Validate archive integrity; handles encrypted and split-volume inputs with `-p` |
 | `list`/`ls SRC` | List archive members and sizes without extracting; handles encrypted and self-extracting inputs with `-p` |
 | `media SRC DEST` | Optimize image/video. Flags: `--mode lossless|lossy`, `--quality`, `--video-preset`, `--video-crf`, `-f`, `-q` |
 | `watch FOLDER -o OUT` | Foreground hot-folder watcher. Flags: `--operation`, `-a`, `-l`, `--media-mode`, `-p`, `--self-extracting`, `--recursive/--no-recursive`, `-q` |
+| `shell install|uninstall|status` | Manage OS context-menu integration (see below) |
 
 Live progress percentage is rendered to stderr; a stable key-value summary is
 printed on completion. Exit codes: `0` success, `1` operation error, `130`
 Ctrl-C.
+
+**Shell integration** (`infrastructure/shell_integration.py`) registers
+per-user "Compress/Extract with LS Compressor" entries — no admin rights:
+
+- macOS: Finder Quick Actions in `~/Library/Services` ("Compress …" and
+  "Extract …" appear on right-click → Quick Actions).
+- Windows: `HKCU\Software\Classes` context-menu keys for files and folders.
+- Linux: KDE service menu (`~/.local/share/kio/servicemenus`) plus Nautilus
+  scripts for GNOME Files.
+- The packaged `.app` also declares archive document types so Finder offers
+  LS Compressor under "Open With".
+- The Settings page has an Install/Remove button mirroring the CLI.
 
 ---
 

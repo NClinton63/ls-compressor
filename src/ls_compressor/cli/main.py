@@ -43,6 +43,7 @@ from ls_compressor.core.watch import (
     WatchOperationType,
     process_watch_event,
 )
+from ls_compressor.infrastructure import shell_integration
 from ls_compressor.infrastructure.logging import configure_logging
 from ls_compressor.infrastructure.watch import WatchService
 
@@ -232,6 +233,15 @@ def build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument(
         "--quiet", "-q", action="store_true", help="suppress per-file output"
     )
+
+    shell_parser = subparsers.add_parser(
+        "shell", help="manage OS shell integration (context menus)"
+    )
+    shell_parser.add_argument(
+        "action",
+        choices=["install", "uninstall", "status"],
+        help="install, remove, or report shell integration entries",
+    )
     return parser
 
 
@@ -322,6 +332,26 @@ def _handle_watch_event(event: object, quiet: bool) -> None:
         )
 
 
+def _run_shell(args: argparse.Namespace) -> None:
+    """Install, remove, or report OS shell integration entries."""
+    if args.action == "status":
+        entries = shell_integration.status()
+        for entry in entries:
+            marker = "installed" if entry.installed else "missing "
+            print(f"[{marker}] {entry.name}: {entry.location}")
+        return
+    items = (
+        shell_integration.install()
+        if args.action == "install"
+        else shell_integration.uninstall()
+    )
+    verb = "Installed" if args.action == "install" else "Removed"
+    for item in items:
+        print(f"{verb}: {item}")
+    if not items:
+        print("No shell integration entries found.")
+
+
 def _human_size(size: int | None) -> str:
     """Format a byte count as a compact human-readable string."""
     if size is None:
@@ -396,6 +426,10 @@ def _run(args: argparse.Namespace) -> None:
 
     if args.command == "watch":
         _run_watch(args)
+        return
+
+    if args.command == "shell":
+        _run_shell(args)
         return
 
     if args.command == "compress":

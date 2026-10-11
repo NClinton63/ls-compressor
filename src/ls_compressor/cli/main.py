@@ -7,6 +7,7 @@ import tempfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from ls_compressor import __version__
 from ls_compressor.core import (
@@ -44,20 +45,34 @@ from ls_compressor.core.watch import (
     process_watch_event,
 )
 from ls_compressor.infrastructure import shell_integration
+from ls_compressor.infrastructure.cli_config import load_cli_config
 from ls_compressor.infrastructure.logging import configure_logging
 from ls_compressor.infrastructure.watch import WatchService
 
 _LOGGER = logging.getLogger("ls_compressor.cli")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build and return the command-line argument parser."""
+def build_parser(
+    config: dict[str, dict[str, Any]] | None = None,
+) -> argparse.ArgumentParser:
+    """Build and return the command-line argument parser.
+
+    ``config`` maps subcommand names to option default overrides loaded
+    from ``ls-compressor.toml``; explicit flags always win.
+    """
+    config = config or {}
     parser = argparse.ArgumentParser(
         prog="ls-compressor",
         description="Compress and decompress files and folders losslessly.",
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="load option defaults from this TOML file instead of the "
+        "default search paths",
     )
     parser.add_argument(
         "--verbose",
@@ -242,6 +257,20 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["install", "uninstall", "status"],
         help="install, remove, or report shell integration entries",
     )
+
+    for name, subparser in {
+        "compress": compress_parser,
+        "decompress": decompress_parser,
+        "verify": verify_parser,
+        "list": list_parser,
+        "media": media_parser,
+        "watch": watch_parser,
+        "shell": shell_parser,
+    }.items():
+        subparser.add_argument("--config", type=Path, help=argparse.SUPPRESS)
+        section = config.get(name)
+        if section:
+            subparser.set_defaults(**section)
     return parser
 
 
@@ -477,7 +506,15 @@ def _run(args: argparse.Namespace) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return a process exit status."""
-    parser = build_parser()
+    pre_parser = argparse.ArgumentParser(prog="ls-compressor", add_help=False)
+    pre_parser.add_argument("--config", type=Path)
+    known, _ = pre_parser.parse_known_args(argv)
+    try:
+        config = load_cli_config(known.config)
+    except InvalidRequestError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+    parser = build_parser(config)
     args = parser.parse_args(argv)
     configure_logging(args.verbose)
     try:

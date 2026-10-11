@@ -260,6 +260,27 @@ Live progress percentage is rendered to stderr; a stable key-value summary is
 printed on completion. Exit codes: `0` success, `1` operation error, `130`
 Ctrl-C.
 
+**Config file** (`infrastructure/cli_config.py`): a `ls-compressor.toml`
+supplies per-command option defaults — searched at `./ls-compressor.toml`
+then the platform config dir, or set explicitly with `--config PATH`
+(accepted before or after the subcommand). Example:
+
+```toml
+[compress]
+algorithm = "xz"
+level = 6
+exclude = ["*.tmp", "build/"]
+
+[media]
+mode = "lossy"
+quality = 80
+```
+
+Section names match subcommands; option names use underscores or dashes.
+Explicit CLI flags always override config values; malformed files and
+invalid enum values produce a readable error. Passwords are never read
+from config.
+
 **Shell integration** (`infrastructure/shell_integration.py`) registers
 per-user "Compress/Extract with LS Compressor" entries — no admin rights:
 

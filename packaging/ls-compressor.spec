@@ -135,6 +135,25 @@ if sys.platform == "darwin":
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "10.14",
             "CFBundlePackageType": "APPL",
+            "CFBundleDocumentTypes": [
+                {
+                    "CFBundleTypeName": "Archive",
+                    "CFBundleTypeRole": "Viewer",
+                    "LSHandlerRank": "Alternate",
+                    "CFBundleTypeExtensions": [
+                        "zip",
+                        "7z",
+                        "rar",
+                        "zst",
+                        "xz",
+                        "gz",
+                        "bz2",
+                        "tar",
+                        "lsenc",
+                        "lsex",
+                    ],
+                }
+            ],
         },
     )
 else:

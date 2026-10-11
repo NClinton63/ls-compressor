@@ -50,6 +50,7 @@ from ls_compressor.core.watch import WatchFolderConfig, WatchOperationType
 from ls_compressor.gui import theme
 from ls_compressor.gui.models import GuiJob, GuiJobKind, GuiJobStatus
 from ls_compressor.gui.resources import icon
+from ls_compressor.infrastructure import shell_integration
 from ls_compressor.infrastructure.config import (
     AppSettings,
     OutputLocationPreference,
@@ -573,6 +574,17 @@ class SettingsDialog(QWidget):
         watch_container = QWidget(self)
         watch_container.setLayout(watch_layout)
 
+        self._shell_button = QPushButton()
+        self._shell_button.clicked.connect(self._toggle_shell_integration)
+        self._shell_status = QLabel()
+        self._refresh_shell_status()
+        shell_layout = QHBoxLayout()
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(theme.SPACE_8)
+        shell_layout.addWidget(self._shell_button)
+        shell_layout.addWidget(self._shell_status)
+        shell_layout.addStretch(1)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -592,6 +604,8 @@ class SettingsDialog(QWidget):
         layout.addRow("Output location", output_layout)
         layout.addRow("Theme", self._theme)
         layout.addRow("Watch folders", watch_container)
+        if sys.platform in {"darwin", "win32"} or sys.platform.startswith("linux"):
+            layout.addRow("Shell integration", shell_layout)
         layout.addRow(buttons)
 
     def _update_level_range(self) -> None:
@@ -680,3 +694,27 @@ class SettingsDialog(QWidget):
     def _remove_watch_folder(self) -> None:
         for item in self._watch_list.selectedItems():
             self._watch_list.takeItem(self._watch_list.row(item))
+
+    def _refresh_shell_status(self) -> None:
+        """Update the shell-integration button label and status text."""
+        entries = shell_integration.status()
+        installed = sum(1 for entry in entries if entry.installed)
+        if installed:
+            self._shell_button.setText("Remove")
+            self._shell_status.setText(f"{installed}/{len(entries)} entries installed")
+        else:
+            self._shell_button.setText("Install")
+            self._shell_status.setText("Context-menu entries not installed")
+
+    def _toggle_shell_integration(self) -> None:
+        """Install or remove shell integration based on current state."""
+        entries = shell_integration.status()
+        try:
+            if any(entry.installed for entry in entries):
+                shell_integration.uninstall()
+            else:
+                shell_integration.install()
+        except Exception as error:
+            self._shell_status.setText(f"Failed: {error}")
+            return
+        self._refresh_shell_status()

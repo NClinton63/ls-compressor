@@ -12,6 +12,7 @@ from pathlib import Path
 from ls_compressor import __version__
 from ls_compressor.core import (
     CompressionAlgorithm,
+    CompressionPlan,
     CompressionPreset,
     CompressionRequest,
     DecompressionRequest,
@@ -26,6 +27,7 @@ from ls_compressor.core import (
     format_listing,
     list_archive,
     optimize_media,
+    plan_compression,
     verify_archive,
 )
 from ls_compressor.core.encryption import (
@@ -262,6 +264,11 @@ def _add_operation_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--quiet", "-q", action="store_true", help="suppress progress output"
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="report what the operation would do without writing output",
+    )
 
 
 def _add_json_option(parser: argparse.ArgumentParser) -> None:
@@ -292,6 +299,77 @@ def _operation_result_dict(result: OperationResult) -> dict:
         "compression_ratio": result.compression_ratio,
         "integrity_verified": result.integrity_verified,
     }
+
+
+def _print_compress_plan(plan: CompressionPlan, *, json_mode: bool) -> None:
+    """Render a compression dry-run plan in human or JSON form."""
+    files = [member for member in plan.members if not member.is_dir]
+    if json_mode:
+        _emit_json(
+            {
+                "operation": "compress",
+                "dry_run": True,
+                "destination": str(plan.destination),
+                "algorithm": plan.algorithm.value,
+                "file_count": len(files),
+                "total_bytes": plan.total_bytes,
+                "destination_exists": plan.destination_exists,
+                "split_volumes": plan.split_volumes,
+                "members": [
+                    {
+                        "name": member.name,
+                        "size": member.size,
+                        "is_dir": member.is_dir,
+                    }
+                    for member in plan.members
+                ],
+            }
+        )
+        return
+    print(f"Dry run: compress → {plan.destination}")
+    print(f"Algorithm: {plan.algorithm.display_name}")
+    print(f"Files: {len(files)} ({_human_size(plan.total_bytes)})")
+    if plan.split_volumes:
+        print(f"Volumes: {plan.split_volumes} (estimated)")
+    if plan.destination_exists:
+        print("Warning: destination already exists (use --force to overwrite)")
+    for member in plan.members:
+        kind = "dir " if member.is_dir else "file"
+        print(f"  {kind} {_human_size(member.size):>12}  {member.name}")
+
+
+def _print_decompress_plan(args: argparse.Namespace, *, json_mode: bool) -> None:
+    """Render a decompression dry-run plan in human or JSON form."""
+    algorithm, entries = list_archive(args.source, password=args.password)
+    files = [entry for entry in entries if not entry.is_dir]
+    destination_exists = args.destination.exists()
+    if json_mode:
+        _emit_json(
+            {
+                "operation": "decompress",
+                "dry_run": True,
+                "source": str(args.source),
+                "destination": str(args.destination),
+                "algorithm": algorithm.value,
+                "file_count": len(files),
+                "destination_exists": destination_exists,
+                "entries": [
+                    {
+                        "name": entry.name,
+                        "uncompressed_size": entry.uncompressed_size,
+                        "is_dir": entry.is_dir,
+                    }
+                    for entry in entries
+                ],
+            }
+        )
+        return
+    print(f"Dry run: extract {args.source} → {args.destination}")
+    print(f"Algorithm: {algorithm.display_name}")
+    print(f"Files: {len(files)}")
+    if destination_exists:
+        print("Warning: destination already exists (use --force to overwrite)")
+    print(format_listing(entries, human_size=_human_size))
 
 
 def _media_result_dict(result: MediaOptimizationResult) -> dict:
@@ -527,6 +605,27 @@ def _run(args: argparse.Namespace) -> None:
             )
         sources = args.paths[:-1]
         preset = CompressionPreset(args.preset) if args.preset else None
+        if args.dry_run:
+            plan = plan_compression(
+                CompressionRequest(
+                    source=sources[0],
+                    destination=args.paths[-1],
+                    algorithm=(
+                        preset.algorithm
+                        if preset
+                        else CompressionAlgorithm(args.algorithm)
+                    ),
+                    compression_level=preset.level if preset else args.level,
+                    password=args.password,
+                    self_extracting=args.self_extracting,
+                    encryption_format=EncryptionFormat(args.encryption),
+                    extra_sources=tuple(sources[1:]),
+                    exclude=tuple(args.exclude or ()),
+                    split_size=parse_size(args.split) if args.split else None,
+                )
+            )
+            _print_compress_plan(plan, json_mode=args.json)
+            return
         result = compress(
             CompressionRequest(
                 source=sources[0],
@@ -547,6 +646,9 @@ def _run(args: argparse.Namespace) -> None:
             callback,
         )
     else:
+        if args.dry_run:
+            _print_decompress_plan(args, json_mode=args.json)
+            return
         result = decompress(
             DecompressionRequest(
                 source=args.source,

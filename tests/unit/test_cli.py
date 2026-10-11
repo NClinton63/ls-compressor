@@ -190,6 +190,74 @@ def test_json_error_emits_json_on_stderr(
     assert captured.out == ""
 
 
+def test_compress_dry_run_reports_plan_without_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--dry-run lists planned members and skips writing the archive."""
+    source = tmp_path / "docs"
+    source.mkdir()
+    (source / "a.txt").write_text("alpha", "utf-8")
+    archive = tmp_path / "docs.tar.zst"
+
+    status = main(["compress", str(source), str(archive), "--dry-run"])
+    captured = capsys.readouterr()
+
+    assert status == 0
+    assert "Dry run" in captured.out
+    assert "docs/a.txt" in captured.out
+    assert not archive.exists()
+
+
+def test_compress_dry_run_json_includes_plan_details(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--dry-run --json reports counts, members, and volume estimates."""
+    source = tmp_path / "f.bin"
+    source.write_bytes(b"x" * 100)
+    archive = tmp_path / "f.zst"
+
+    status = main(
+        [
+            "compress",
+            str(source),
+            str(archive),
+            "--dry-run",
+            "--split",
+            "60",
+            "--json",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert status == 0
+    assert payload["dry_run"] is True
+    assert payload["file_count"] == 1
+    assert payload["total_bytes"] == 100
+    assert payload["split_volumes"] == 2
+    assert payload["members"][0]["name"] == "f.bin"
+    assert not archive.exists()
+
+
+def test_decompress_dry_run_lists_entries(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--dry-run previews extraction members without writing output."""
+    source = tmp_path / "note.txt"
+    source.write_text("hi", "utf-8")
+    archive = tmp_path / "note.zip"
+    assert main(["compress", str(source), str(archive), "-a", "zip", "-q"]) == 0
+    capsys.readouterr()
+    destination = tmp_path / "out"
+
+    status = main(["decompress", str(archive), str(destination), "--dry-run"])
+    captured = capsys.readouterr()
+
+    assert status == 0
+    assert "Dry run" in captured.out
+    assert "note.txt" in captured.out
+    assert not destination.exists()
+
+
 def test_media_command_reports_unsupported_format(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

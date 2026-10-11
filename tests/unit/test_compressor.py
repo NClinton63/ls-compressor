@@ -348,3 +348,37 @@ def test_exclude_all_members_rejected(tmp_path: Path) -> None:
                 exclude=("*.txt",),
             )
         )
+
+
+@pytest.mark.parametrize(
+    "algorithm",
+    [
+        CompressionAlgorithm.ZIP,
+        CompressionAlgorithm.ZSTD,
+        CompressionAlgorithm.GZIP,
+    ],
+)
+def test_extract_restores_file_mtime(tmp_path: Path, algorithm) -> None:
+    """File mtimes survive a compress/extract roundtrip per format."""
+    source_dir = tmp_path / "data"
+    source_dir.mkdir()
+    source = source_dir / "note.txt"
+    source.write_text("timestamped")
+    stored = 1_600_000_000  # even second, ZIP-safe granularity
+    os.utime(source, (stored, stored))
+    os.utime(source_dir, (stored, stored))
+    archive = tmp_path / f"data{algorithm.archive_suffix(is_directory=True)}"
+    extracted = tmp_path / "restored"
+
+    target = source_dir if algorithm is not CompressionAlgorithm.GZIP else source
+    compress(CompressionRequest(target, archive, algorithm))
+    decompress(DecompressionRequest(archive, extracted))
+
+    restored = (
+        extracted / "data" / "note.txt"
+        if algorithm is not CompressionAlgorithm.GZIP
+        else extracted
+    )
+    assert abs(restored.stat().st_mtime - stored) <= 2
+    if algorithm is not CompressionAlgorithm.GZIP:
+        assert abs((extracted / "data").stat().st_mtime - stored) <= 2

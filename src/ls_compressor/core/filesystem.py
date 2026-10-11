@@ -149,6 +149,16 @@ def apply_mode(path: Path, mode: int) -> None:
         return
 
 
+def apply_mtime(path: Path, mtime: float | int | None) -> None:
+    """Best-effort restoration of a file modification timestamp."""
+    if mtime is None or mtime <= 0:
+        return
+    try:
+        os.utime(path, (mtime, mtime))
+    except (OSError, OverflowError):
+        return
+
+
 def raise_filesystem_error(error: OSError, path: Path) -> None:
     """Raise a domain exception corresponding to a filesystem error."""
     if error.errno in {errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)}:

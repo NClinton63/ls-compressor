@@ -37,6 +37,7 @@ from ls_compressor.core.exceptions import (
 from ls_compressor.core.filesystem import (
     CHUNK_SIZE,
     apply_mode,
+    apply_mtime,
     clear_destination,
     ensure_source,
     is_excluded,
@@ -265,7 +266,7 @@ def _compress_zip(
     ) as archive:
         for _, path, name in _iter_source_members(request):
             if path.is_dir():
-                info = zipfile.ZipInfo(name + "/")
+                info = zipfile.ZipInfo.from_file(path, name + "/")
                 info.external_attr = (path.stat().st_mode & 0xFFFF) << 16
                 archive.writestr(info, b"")
                 continue
@@ -356,10 +357,18 @@ def _compress_stream(
 ) -> None:
     """Compress one file as an XZ, GZIP, or BZ2 stream."""
     kwargs = _compression_kwargs(request)
-    with (
-        request.source.open("rb") as source,
-        _stream_opener(request.algorithm)(temporary, "wb", **kwargs) as destination,
-    ):
+    if request.algorithm is CompressionAlgorithm.GZIP:
+        destination_stream = gzip.GzipFile(
+            filename=str(temporary),
+            mode="wb",
+            compresslevel=kwargs.get("compresslevel", 9),
+            mtime=int(request.source.stat().st_mtime),
+        )
+    else:
+        destination_stream = _stream_opener(request.algorithm)(
+            temporary, "wb", **kwargs
+        )
+    with request.source.open("rb") as source, destination_stream as destination:
         while chunk := source.read(CHUNK_SIZE):
             destination.write(chunk)
             update(len(chunk), request.source)
@@ -475,15 +484,18 @@ def _extract_zip(
 ) -> int:
     """Extract ZIP entries with traversal checks and preserved permissions."""
     count = 0
+    dir_times: list[tuple[Path, float]] = []
     try:
         with pyzipper.AESZipFile(source) as archive:
             if password is not None:
                 archive.setpassword(password.encode("utf-8"))
             for info in archive.infolist():
                 target = safe_target(destination, info.filename)
+                member_mtime = time.mktime((*info.date_time, 0, 0, -1))
                 if info.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
                     apply_mode(target, info.external_attr >> 16)
+                    dir_times.append((target, member_mtime))
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with archive.open(info) as compressed, target.open("wb") as output:
@@ -491,7 +503,10 @@ def _extract_zip(
                         output.write(chunk)
                         update(len(chunk), target)
                 apply_mode(target, info.external_attr >> 16)
+                apply_mtime(target, member_mtime)
                 count += 1
+        for path, mtime in reversed(dir_times):
+            apply_mtime(path, mtime)
     except RuntimeError as error:
         message = str(error).lower()
         if "password" in message or "encrypt" in message:
@@ -528,6 +543,7 @@ def _extract_tar(
             archive = stack.enter_context(tarfile.open(fileobj=decompressed, mode="r|"))
         else:
             archive = stack.enter_context(tarfile.open(source, "r:*"))
+        dir_times: list[tuple[Path, float]] = []
         for member in archive:
             target = safe_target(destination, member.name)
             if member.issym() or member.islnk():
@@ -537,6 +553,7 @@ def _extract_tar(
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
                 apply_mode(target, member.mode)
+                dir_times.append((target, float(member.mtime)))
                 continue
             if not member.isfile():
                 continue
@@ -549,7 +566,10 @@ def _extract_tar(
                     output.write(chunk)
                     update(len(chunk), target)
             apply_mode(target, member.mode)
+            apply_mtime(target, member.mtime)
             count += 1
+        for path, mtime in reversed(dir_times):
+            apply_mtime(path, mtime)
     return count
 
 
@@ -599,10 +619,13 @@ def _extract_rar(
         with rarfile.RarFile(source) as archive:
             if archive.needs_password() and not password:
                 raise EncryptionError("A password is required to extract this archive")
+            dir_times: list[tuple[Path, float | None]] = []
             for info in archive.infolist():
                 target = safe_target(destination, info.filename)
+                member_mtime = info.mtime.timestamp() if info.mtime else None
                 if info.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
+                    dir_times.append((target, member_mtime))
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with (
@@ -612,7 +635,10 @@ def _extract_rar(
                     while chunk := compressed.read(CHUNK_SIZE):
                         output.write(chunk)
                         update(len(chunk), target)
+                apply_mtime(target, member_mtime)
                 count += 1
+            for path, mtime in reversed(dir_times):
+                apply_mtime(path, mtime)
     except EncryptionError:
         raise
     except rarfile.RarCannotExec as error:
@@ -633,13 +659,15 @@ def _extract_stream(
     update: Callable[[int, Path], None],
 ) -> None:
     """Extract one compressed stream with bounded memory use."""
-    with (
-        _stream_opener(algorithm)(source, "rb") as compressed,
-        destination.open("wb") as output,
-    ):
+    compressed_stream = _stream_opener(algorithm)(source, "rb")
+    with compressed_stream as compressed, destination.open("wb") as output:
         while chunk := compressed.read(CHUNK_SIZE):
             output.write(chunk)
             update(len(chunk), destination)
+    stored_mtime = (
+        compressed_stream.mtime if algorithm is CompressionAlgorithm.GZIP else None
+    )
+    apply_mtime(destination, stored_mtime)
 
 
 def _uses_container(request: CompressionRequest) -> bool:

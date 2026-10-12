@@ -264,6 +264,7 @@ Entry point: `ls-compressor` (also `python -m ls_compressor`). Global flags:
 | `verify SRC` | Validate archive integrity; handles encrypted and split-volume inputs with `-p` |
 | `list`/`ls SRC` | List archive members and sizes without extracting; handles encrypted and self-extracting inputs with `-p` |
 | `media SRC DEST` | Optimize image/video. Flags: `--mode lossless|lossy`, `--quality`, `--video-preset`, `--video-crf`, `-f`, `-q` |
+| `palette SRC` | Print dominant colors of an image as hex. Flags: `-n/--count`, `--json` |
 | `watch FOLDER -o OUT` | Foreground hot-folder watcher. Flags: `--operation`, `-a`, `-l`, `--media-mode`, `-p`, `--self-extracting`, `--recursive/--no-recursive`, `-q` |
 | `bench SRC` | Benchmark every write-capable algorithm on one source (time, output size, ratio sorted best-first). Flags: `-l/--level` |
 | `shell install|uninstall|status` | Manage OS context-menu integration (see below) |

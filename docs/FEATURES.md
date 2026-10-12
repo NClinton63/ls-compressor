@@ -251,6 +251,16 @@ overwritten without `overwrite`/`--force`.
 
 CLI: `watermark SRC DEST --text "© Acme" [--position tile|center|top-left|…] [--opacity 0.4] [-f]`
 
+### Bulk rename
+
+`core/rename.py` renames batches of files in place using a token pattern —
+`{stem}`, `{ext}`, `{index}` (configurable start), and `{parent}`. The plan
+is validated up front (unknown tokens, path separators, duplicate outputs)
+and applied in two phases so rename chains like `a→b, b→c` are safe.
+Existing files are never clobbered without `--force`.
+
+CLI: `rename FILES... --pattern "{parent}-{index}{ext}" [--start N] [--dry-run] [-f]`
+
 ---
 
 ## 4. Watch folders (Hot Folders)

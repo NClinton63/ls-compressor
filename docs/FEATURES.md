@@ -188,6 +188,10 @@ Unsupported inputs raise `UnsupportedFormatError`.
   lossless WebP, etc.).
 - `lossy` — quality-controlled recompression.
 
+**Resize** (`max_dimension` / CLI `--max-size PX` / the Optimize page "px"
+spinner) downscales images so the longest edge fits the limit using Lanczos
+resampling; images already within the limit pass through untouched.
+
 **Tunables** (`MediaOptimizationRequest`):
 
 - `quality` (1–100) for JPEG/WebP lossy output.

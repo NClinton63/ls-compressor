@@ -159,6 +159,28 @@ class TestOptimizeImages:
         assert result.media_format is MediaFormat.WEBP
         assert destination.exists()
 
+    def test_resize_constrains_longest_edge(
+        self, jpeg_file: Path, tmp_path: Path
+    ) -> None:
+        destination = tmp_path / "small.webp"
+        request = MediaOptimizationRequest(
+            source=jpeg_file, destination=destination, max_dimension=32
+        )
+        result = optimize_media(request)
+        assert result.integrity_verified is True
+        with Image.open(destination) as output:
+            assert max(output.size) == 32
+
+    def test_resize_noop_when_smaller(self, png_file: Path, tmp_path: Path) -> None:
+        destination = tmp_path / "same.png"
+        request = MediaOptimizationRequest(
+            source=png_file, destination=destination, max_dimension=4096
+        )
+        result = optimize_media(request)
+        with Image.open(destination) as output:
+            assert output.size == (64, 64)
+        assert result.integrity_verified is True
+
     def test_convert_jpeg_to_webp(self, jpeg_file: Path, tmp_path: Path) -> None:
         destination = tmp_path / "output.webp"
         request = MediaOptimizationRequest(source=jpeg_file, destination=destination)

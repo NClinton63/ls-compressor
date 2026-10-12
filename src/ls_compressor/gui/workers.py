@@ -53,6 +53,7 @@ class CompressionWorker(QRunnable):
         media_quality: int | None = None,
         video_preset: str = "medium",
         video_crf: int | None = None,
+        media_max_dimension: int | None = None,
         password: str | None = None,
         self_extracting: bool = False,
         encryption_format: EncryptionFormat = EncryptionFormat.LSE,
@@ -76,6 +77,7 @@ class CompressionWorker(QRunnable):
         self.media_quality = media_quality
         self.video_preset = video_preset
         self.video_crf = video_crf
+        self.media_max_dimension = media_max_dimension
         self.password = password
         self.self_extracting = self_extracting
         self.encryption_format = encryption_format
@@ -141,6 +143,7 @@ class CompressionWorker(QRunnable):
             overwrite=False,
             video_preset=self.video_preset,
             video_crf=self.video_crf,
+            max_dimension=self.media_max_dimension,
         )
         if self.media_format is not None and detected_format != self.media_format:
             LOGGER.warning(

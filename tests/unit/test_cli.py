@@ -119,6 +119,61 @@ def test_media_command_optimizes_image_and_prints_summary(
     assert captured.err == ""
 
 
+def test_media_batch_processes_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A directory source writes one output per supported file."""
+    source_dir = tmp_path / "images"
+    source_dir.mkdir()
+    for index in range(3):
+        image = Image.new("RGB", (48, 48), (index * 80, 40, 120))
+        image.save(source_dir / f"img{index}.png", format="PNG")
+    (source_dir / "skip.txt").write_text("not media", encoding="utf-8")
+    output_dir = tmp_path / "out"
+
+    status = main(["media", str(source_dir), str(output_dir), "--format", "webp", "-q"])
+    captured = capsys.readouterr()
+
+    assert status == 0
+    assert sorted(p.name for p in output_dir.iterdir()) == [
+        "img0.webp",
+        "img1.webp",
+        "img2.webp",
+    ]
+    for output in output_dir.iterdir():
+        assert Image.open(output).format == "WEBP"
+    assert "Skipped: 1 file(s)" in captured.out
+
+
+def test_media_batch_multiple_sources(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Several sources optimize into a destination folder."""
+    first = tmp_path / "a.png"
+    second = tmp_path / "b.png"
+    for path in (first, second):
+        Image.new("RGB", (32, 32), (10, 200, 30)).save(path, format="PNG")
+    output_dir = tmp_path / "out"
+
+    status = main(["media", str(first), str(second), str(output_dir), "-q"])
+
+    assert status == 0
+    assert {p.name for p in output_dir.iterdir()} == {"a.png", "b.png"}
+    captured = capsys.readouterr()
+    assert captured.out.count("Completed: media_optimize") == 2
+
+
+def test_media_batch_requires_destination_dir(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Batch mode fails cleanly when nothing is processable."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    status = main(["media", str(empty), str(tmp_path / "out"), "-q"])
+    assert status == 1
+    assert "No supported media" in capsys.readouterr().err
+
+
 def test_json_compress_emits_parseable_result(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

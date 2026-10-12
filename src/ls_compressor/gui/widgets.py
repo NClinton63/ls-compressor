@@ -15,7 +15,9 @@ from PySide6.QtGui import (
     QFontDatabase,
     QFontMetrics,
     QIcon,
+    QMouseEvent,
     QPainter,
+    QPixmap,
     QResizeEvent,
 )
 from PySide6.QtWidgets import (
@@ -87,6 +89,134 @@ def _path_font() -> QFont:
     font = QFont(family)
     font.setPixelSize(theme.FONT_SIZE_11)
     return font
+
+
+class CompareWidget(QWidget):
+    """Draggable before/after image comparison matching the web CompareSlider.
+
+    Draws the "after" image filling the fitted rect and the "before" image
+    clipped to the left ``position`` fraction, separated by a divider handle.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._before: QPixmap | None = None
+        self._after: QPixmap | None = None
+        self._position = 0.5
+        self._before_label = "Before"
+        self._after_label = "After"
+        self.setMinimumHeight(220)
+        self.setCursor(Qt.CursorShape.SplitHCursor)
+        self.setVisible(False)
+
+    def set_comparison(
+        self,
+        before: Path,
+        after: Path,
+        before_label: str | None = None,
+        after_label: str | None = None,
+    ) -> bool:
+        """Load a before/after pair; returns False if either is not an image."""
+        before_pixmap = QPixmap(str(before))
+        after_pixmap = QPixmap(str(after))
+        if before_pixmap.isNull() or after_pixmap.isNull():
+            return False
+        self._before = before_pixmap
+        self._after = after_pixmap
+        if before_label:
+            self._before_label = before_label
+        if after_label:
+            self._after_label = after_label
+        self._position = 0.5
+        self.setVisible(True)
+        self.update()
+        return True
+
+    def clear(self) -> None:
+        """Hide the widget and drop the loaded pixmaps."""
+        self._before = None
+        self._after = None
+        self.setVisible(False)
+
+    def _fitted_rect(self) -> QRectF:
+        """Return the aspect-fit rect for the after image inside the widget."""
+        if self._after is None:
+            return QRectF()
+        size = self._after.size()
+        size.scale(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
+        return QRectF(
+            (self.width() - size.width()) / 2,
+            (self.height() - size.height()) / 2,
+            size.width(),
+            size.height(),
+        )
+
+    def _set_position_from_x(self, x: float) -> None:
+        rect = self._fitted_rect()
+        if rect.width() <= 0:
+            return
+        self._position = min(1.0, max(0.0, (x - rect.left()) / rect.width()))
+        self.update()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        self._set_position_from_x(event.position().x())
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self._set_position_from_x(event.position().x())
+
+    def _draw_label(
+        self,
+        painter: QPainter,
+        text: str,
+        rect: QRectF,
+        anchor: Qt.AlignmentFlag,
+    ) -> None:
+        """Draw a small translucent chip with the label text."""
+        metrics = painter.fontMetrics()
+        text_rect = metrics.boundingRect(text)
+        padding = 6
+        chip = QRectF(0, 0, text_rect.width() + padding * 2, text_rect.height() + 4)
+        x = (
+            rect.left() + 8
+            if anchor == Qt.AlignmentFlag.AlignLeft
+            else rect.right() - chip.width() - 8
+        )
+        chip.moveTo(x, rect.top() + 8)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 150))
+        painter.drawRoundedRect(chip, 4, 4)
+        painter.setPen(QColor(theme.TEXT_PRIMARY))
+        painter.drawText(chip, Qt.AlignmentFlag.AlignCenter, text)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        if self._before is None or self._after is None:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        rect = self._fitted_rect()
+        painter.drawPixmap(rect, self._after, QRectF(self._after.rect()))
+        left_width = rect.width() * self._position
+        if left_width > 0:
+            target = QRectF(rect.left(), rect.top(), left_width, rect.height())
+            source = QRectF(
+                0,
+                0,
+                self._before.width() * self._position,
+                self._before.height(),
+            )
+            painter.drawPixmap(target, self._before, source)
+        divider_x = rect.left() + left_width
+        painter.setPen(QColor(theme.ACCENT))
+        painter.drawLine(
+            int(divider_x), int(rect.top()), int(divider_x), int(rect.bottom())
+        )
+        painter.setBrush(QColor(theme.ACCENT))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QRectF(divider_x - 7, rect.center().y() - 7, 14, 14))
+        self._draw_label(painter, self._before_label, rect, Qt.AlignmentFlag.AlignLeft)
+        self._draw_label(painter, self._after_label, rect, Qt.AlignmentFlag.AlignRight)
+        painter.end()
 
 
 class AlgorithmComboBox(QComboBox):

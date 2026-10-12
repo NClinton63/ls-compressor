@@ -53,6 +53,7 @@ from ls_compressor.gui.sidebar import Sidebar
 from ls_compressor.gui.stat_card import StatCard
 from ls_compressor.gui.widgets import (
     AlgorithmComboBox,
+    CompareWidget,
     DropArea,
     JobTable,
     SettingsDialog,
@@ -369,6 +370,20 @@ class MediaPage(_Page):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__("Optimize", "{}", parent)
+        self._compare = CompareWidget(self)
+        self.layout().insertWidget(2, self._compare)
+
+    def show_comparison(
+        self, source: Path, destination: Path, savings: float | None = None
+    ) -> None:
+        """Show the before/after slider for a finished image job."""
+        after_label = "Optimized"
+        if savings is not None:
+            after_label = f"Optimized ({savings:+.0f}%)"
+        if not self._compare.set_comparison(
+            source, destination, "Original", after_label
+        ):
+            self._compare.clear()
 
     def _kind(self) -> GuiJobKind | None:
         return GuiJobKind.MEDIA_OPTIMIZE
@@ -968,6 +983,12 @@ class MainWindow(QMainWindow):
         }
         if result.kind == OperationKind.COMPRESS:
             changes["last_used_algorithm"] = result.algorithm
+        if result.kind == OperationKind.MEDIA_OPTIMIZE:
+            self._optimize_page.show_comparison(
+                result.source,
+                result.destination,
+                result.space_savings_percentage,
+            )
         self._update_settings(**changes)
         self._update_stats()
 

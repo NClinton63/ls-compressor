@@ -10,3 +10,4 @@ py7zr==1.0.0
 rarfile==4.2
 pyzipper==0.4.0
 pillow-heif==1.8.1
+scour==0.38.2

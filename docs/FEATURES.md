@@ -181,6 +181,9 @@ changing the public API.
 
 - **Images:** PNG, JPEG, WebP, AVIF, GIF, BMP, HEIC/HEIF — handled by Pillow
   (AVIF via Pillow's built-in codec, HEIC via `pillow-heif`).
+- **SVG:** optimized in place with `scour` (comment/metadata stripping,
+  whitespace and viewBox normalization, color shortening; `<title>` and other
+  accessibility content is preserved).
 - **Video:** `.mp4 .mov .avi .mkv .webm .m4v .flv .wmv` — recompressed via
   FFmpeg (bundled through `imageio[ffmpeg]`).
 

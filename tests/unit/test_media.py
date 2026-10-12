@@ -306,6 +306,53 @@ class TestOptimizeImages:
         assert destination.stat().st_size != len(b"existing")
 
 
+class TestOptimizeSvg:
+    """SVG minification through scour."""
+
+    def _make_svg(self, path: Path) -> None:
+        path.write_text(
+            '<?xml version="1.0"?>\n'
+            "<!-- generated -->\n"
+            '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60">\n'
+            "  <metadata>editor data</metadata>\n"
+            "  <title>shape</title>\n"
+            '  <rect x="10.0000" y="10.0000" width="60.0000" '
+            'height="40.0000" fill="#ff0000"/>\n'
+            "</svg>\n",
+            encoding="utf-8",
+        )
+
+    def test_detect_svg(self, tmp_path: Path) -> None:
+        source = tmp_path / "icon.svg"
+        self._make_svg(source)
+        assert detect_media_format(source) is MediaFormat.SVG
+
+    def test_optimize_svg(self, tmp_path: Path) -> None:
+        source = tmp_path / "icon.svg"
+        self._make_svg(source)
+        destination = tmp_path / "icon.min.svg"
+        result = optimize_media(
+            MediaOptimizationRequest(source=source, destination=destination)
+        )
+        assert result.media_format is MediaFormat.SVG
+        assert result.integrity_verified is True
+        assert result.output_size < result.source_size
+        output = destination.read_text(encoding="utf-8")
+        assert "<!--" not in output
+        assert "<metadata>" not in output
+        assert "<title>" in output  # accessibility content preserved
+
+    def test_optimize_svg_rejects_invalid(self, tmp_path: Path) -> None:
+        source = tmp_path / "broken.svg"
+        source.write_text("not xml at all", encoding="utf-8")
+        with pytest.raises(CompressionError):
+            optimize_media(
+                MediaOptimizationRequest(
+                    source=source, destination=tmp_path / "out.svg"
+                )
+            )
+
+
 class TestOptimizeVideo:
     """FFmpeg-backed video optimization."""
 

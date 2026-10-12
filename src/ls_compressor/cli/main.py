@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ls_compressor import __version__
+from ls_compressor.cli.completions import available_shells, completion_script
 from ls_compressor.core import (
     CompressionAlgorithm,
     CompressionPlan,
@@ -276,6 +277,14 @@ def build_parser(
         "action",
         choices=["install", "uninstall", "status"],
         help="install, remove, or report shell integration entries",
+    )
+    completions_parser = subparsers.add_parser(
+        "completions", help="print a shell completion script"
+    )
+    completions_parser.add_argument(
+        "shell",
+        choices=available_shells(),
+        help="shell to generate completions for",
     )
 
     for name, subparser in {
@@ -680,6 +689,13 @@ def _run(args: argparse.Namespace) -> None:
 
     if args.command == "shell":
         _run_shell(args)
+        return
+
+    if args.command == "completions":
+        print(
+            completion_script(args.shell, build_parser()),
+            end="",
+        )
         return
 
     if args.command == "compress":

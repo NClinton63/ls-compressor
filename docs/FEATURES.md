@@ -262,6 +262,7 @@ Entry point: `ls-compressor` (also `python -m ls_compressor`). Global flags:
 | `watch FOLDER -o OUT` | Foreground hot-folder watcher. Flags: `--operation`, `-a`, `-l`, `--media-mode`, `-p`, `--self-extracting`, `--recursive/--no-recursive`, `-q` |
 | `bench SRC` | Benchmark every write-capable algorithm on one source (time, output size, ratio sorted best-first). Flags: `-l/--level` |
 | `shell install|uninstall|status` | Manage OS context-menu integration (see below) |
+| `completions SHELL` | Print a completion script for `bash`, `zsh`, or `fish` — generated from the parser, so it always reflects the current flags |
 
 Live progress percentage is rendered to stderr; a stable key-value summary is
 printed on completion. `compress`, `decompress`, `verify`, `list`, and

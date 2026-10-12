@@ -205,7 +205,13 @@ def build_parser(
     media_parser.add_argument(
         "--video-crf",
         type=int,
-        help="FFmpeg x264 CRF (0-51, lower is higher quality)",
+        help="video CRF (h264/hevc 0-51, av1/webm 0-63, lower is higher quality)",
+    )
+    media_parser.add_argument(
+        "--video-codec",
+        choices=["h264", "hevc", "av1", "h264-hw", "hevc-hw"],
+        default="h264",
+        help="video encoder (h264-hw/hevc-hw use macOS VideoToolbox)",
     )
     media_parser.add_argument(
         "--max-size",
@@ -622,6 +628,7 @@ def _run_media(args: argparse.Namespace, callback: object) -> None:
                         overwrite=True if batch else args.force,
                         video_preset=args.video_preset,
                         video_crf=args.video_crf,
+                        video_codec=args.video_codec,
                         max_dimension=args.max_size,
                     ),
                     callback,

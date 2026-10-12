@@ -28,6 +28,7 @@ from ls_compressor.core import (
     decompress,
     extract_palette,
     format_listing,
+    generate_icon_pack,
     list_archive,
     optimize_media,
     plan_compression,
@@ -221,6 +222,15 @@ def build_parser(
         "--count", "-n", type=int, default=8, help="number of colors (default 8)"
     )
     _add_json_option(palette_parser)
+    icons_parser = subparsers.add_parser(
+        "icons", help="generate a favicon/app-icon pack from an image"
+    )
+    icons_parser.add_argument("source", type=Path)
+    icons_parser.add_argument("destination", type=Path, help="output .zip path")
+    icons_parser.add_argument(
+        "--force", "-f", action="store_true", help="overwrite existing output"
+    )
+    _add_json_option(icons_parser)
 
     watch_parser = subparsers.add_parser(
         "watch", help="monitor a folder and process new files automatically"
@@ -651,6 +661,25 @@ def _run(args: argparse.Namespace) -> None:
             print(f"Palette ({len(colors)} colors): {args.source}")
             for color in colors:
                 print(f"  {color}")
+        return
+
+    if args.command == "icons":
+        members = generate_icon_pack(
+            args.source, args.destination, overwrite=args.force
+        )
+        if args.json:
+            _emit_json(
+                {
+                    "operation": "icons",
+                    "source": str(args.source),
+                    "destination": str(args.destination),
+                    "files": members,
+                }
+            )
+        else:
+            print(f"Icon pack written: {args.destination}")
+            for member in members:
+                print(f"  {member}")
         return
     if args.command == "verify":
         with tempfile.TemporaryDirectory() as temp_dir:

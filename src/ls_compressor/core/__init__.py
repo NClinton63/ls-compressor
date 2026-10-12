@@ -22,6 +22,7 @@ from ls_compressor.core.export_packs import (
     generate_scale_pack,
     generate_srcset,
 )
+from ls_compressor.core.fonts import convert_font
 from ls_compressor.core.icons import generate_icon_pack
 from ls_compressor.core.listing import (
     ArchiveEntry,
@@ -94,6 +95,7 @@ __all__ = [
     "apply_renames",
     "apply_watermark",
     "compress",
+    "convert_font",
     "create_self_extracting_archive",
     "decompress",
     "decrypt_archive",

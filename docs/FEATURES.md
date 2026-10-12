@@ -265,6 +265,16 @@ Existing files are never clobbered without `--force`.
 
 CLI: `rename FILES... --pattern "{parent}-{index}{ext}" [--start N] [--dry-run] [-f]`
 
+### Font conversion
+
+`core/fonts.py` converts between TTF/OTF/WOFF/WOFF2 via fontTools — WOFF2
+output uses Brotli compression — and can subset a font to just the code
+points needed for a text string (`--subset` / `--subset-file`), typically
+shrinking a desktop font to a few KB for web use. The destination extension
+selects the output flavor; existing files require `--force`.
+
+CLI: `font SRC DEST.woff2 [--subset "Hello World"] [--subset-file chars.txt] [-f]`
+
 ---
 
 ## 4. Watch folders (Hot Folders)

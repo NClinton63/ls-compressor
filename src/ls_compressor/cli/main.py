@@ -316,6 +316,25 @@ def build_parser(
     )
     _add_json_option(rename_parser)
 
+    font_parser = subparsers.add_parser(
+        "font", help="convert fonts to WOFF2/WOFF or subset them"
+    )
+    font_parser.add_argument("source", type=Path)
+    font_parser.add_argument("destination", type=Path)
+    font_parser.add_argument(
+        "--subset",
+        help="keep only the characters in this text",
+    )
+    font_parser.add_argument(
+        "--subset-file",
+        type=Path,
+        help="read the subset character set from a file",
+    )
+    font_parser.add_argument(
+        "--force", "-f", action="store_true", help="overwrite existing output"
+    )
+    _add_json_option(font_parser)
+
     watch_parser = subparsers.add_parser(
         "watch", help="monitor a folder and process new files automatically"
     )
@@ -964,6 +983,30 @@ def _run(args: argparse.Namespace) -> None:
             verb = "Would rename" if args.dry_run else "Renamed"
             for item in items:
                 print(f"{verb}: {item.source} -> {item.destination.name}")
+        return
+
+    if args.command == "font":
+        from ls_compressor.core.fonts import convert_font
+
+        subset = args.subset
+        if args.subset_file is not None:
+            try:
+                subset = args.subset_file.read_text(encoding="utf-8")
+            except OSError as error:
+                raise InvalidRequestError(
+                    f"Cannot read subset file: {error}"
+                ) from error
+        result_path = convert_font(
+            args.source,
+            args.destination,
+            subset_text=subset,
+            overwrite=args.force,
+        )
+        _LOGGER.info("Operation succeeded command=%s", args.command)
+        if args.json:
+            _emit_json({"command": "font", "output": str(result_path)})
+        else:
+            print(f"Font converted: {result_path}")
         return
 
     if args.command == "watch":

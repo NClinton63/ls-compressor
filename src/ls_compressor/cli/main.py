@@ -335,6 +335,33 @@ def build_parser(
     )
     _add_json_option(font_parser)
 
+    pdf_parser = subparsers.add_parser(
+        "pdf",
+        help="combine images into a PDF or render PDF pages to images",
+    )
+    pdf_parser.add_argument(
+        "paths",
+        nargs="+",
+        type=Path,
+        help="images… out.pdf  |  in.pdf out_dir",
+    )
+    pdf_parser.add_argument(
+        "--format",
+        choices=["png", "jpeg", "webp"],
+        default="png",
+        help="page image format when rasterizing (default png)",
+    )
+    pdf_parser.add_argument(
+        "--dpi",
+        type=int,
+        default=150,
+        help="render resolution for PDF pages (20-600, default 150)",
+    )
+    pdf_parser.add_argument(
+        "--force", "-f", action="store_true", help="overwrite existing outputs"
+    )
+    _add_json_option(pdf_parser)
+
     watch_parser = subparsers.add_parser(
         "watch", help="monitor a folder and process new files automatically"
     )
@@ -1007,6 +1034,38 @@ def _run(args: argparse.Namespace) -> None:
             _emit_json({"command": "font", "output": str(result_path)})
         else:
             print(f"Font converted: {result_path}")
+        return
+
+    if args.command == "pdf":
+        from ls_compressor.core.pdf import images_to_pdf, pdf_to_images
+
+        *inputs, target = args.paths
+        if target.suffix.lower() == ".pdf":
+            if not inputs:
+                raise InvalidRequestError(
+                    "pdf requires at least one image and a .pdf destination"
+                )
+            images_to_pdf(list(inputs), target, overwrite=args.force)
+            outputs = [str(target)]
+        else:
+            if len(args.paths) != 2:
+                raise InvalidRequestError(
+                    "pdf-to-images takes exactly one PDF and an output dir"
+                )
+            pages = pdf_to_images(
+                args.paths[0],
+                target,
+                image_format=args.format,
+                dpi=args.dpi,
+                overwrite=args.force,
+            )
+            outputs = [str(path) for path in pages]
+        _LOGGER.info("Operation succeeded command=%s", args.command)
+        if args.json:
+            _emit_json({"command": "pdf", "outputs": outputs})
+        else:
+            for output in outputs:
+                print(f"Wrote: {output}")
         return
 
     if args.command == "watch":

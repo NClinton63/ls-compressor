@@ -83,6 +83,12 @@ cli/ ─┼─> core/          (domain logic: compression, media, encryption, wa
   `parse_size` (e.g. `100M`, `1.5GiB`).
 - `overwrite` protection: operations refuse to clobber an existing destination
   unless `force`/`--force` is set.
+- **Metadata preservation**: extraction restores modification times recorded in
+  the archive — ZIP `date_time`, tar member mtime, 7z stored timestamps, RAR
+  `mtime`, and the gzip stream header. Directory timestamps are applied after
+  their contents so writes don't clobber them. `core/filesystem.apply_mtime`
+  is best-effort: unsupported filesystems are ignored rather than failing the
+  extraction.
 - Source existence/destination preparation handled centrally in
   `core/filesystem.py` (`ensure_source`, `prepare_destination`,
   `replace_path`), with atomic result placement.

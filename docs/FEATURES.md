@@ -123,6 +123,11 @@ time, files processed, compression ratio, and space-savings percentage.
   prompt for `pip install argon2-cffi` when needed.
 - **File format:** `LSE\x01` magic + 2-byte metadata length + JSON metadata +
   salt + nonce + ciphertext. `is_encrypted_file()` detects the magic header.
+- **Web interop:** the container is byte-identical with the web platform's
+  `lib/lse.ts` (same header layout, Argon2id parameters, and `ext` metadata),
+  so `.lsenc` files decrypt in the browser and web-produced LSE files decrypt
+  here. KDF parameters missing from the header fall back to the documented
+  defaults (PBKDF2: 100k iterations; Argon2id: t=3/m=64 MiB/p=2).
 
 **Password-protected compression:** pass `password` on a `CompressionRequest`
 (or `--password` in the CLI, or the password field on the Compress page). The

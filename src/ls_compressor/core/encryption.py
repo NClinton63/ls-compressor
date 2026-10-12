@@ -88,16 +88,16 @@ def _derive_key_from_metadata(
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,
-            iterations=int(kdf["iterations"]),
+            iterations=int(kdf.get("iterations", LEGACY_ITERATIONS)),
         )
         return kdf_obj.derive(password.encode("utf-8"))
     if algo == "argon2id":
         return derive_key_argon2id(
             password,
             salt,
-            time_cost=int(kdf["time_cost"]),
-            memory_cost=int(kdf["memory_cost"]),
-            parallelism=int(kdf["parallelism"]),
+            time_cost=int(kdf.get("time_cost", ARGON2_TIME_COST)),
+            memory_cost=int(kdf.get("memory_cost", ARGON2_MEMORY_COST_KIB)),
+            parallelism=int(kdf.get("parallelism", ARGON2_PARALLELISM)),
         )
     raise EncryptionError(f"Unsupported key derivation: {algo}")
 

@@ -141,6 +141,14 @@ def build_parser(
         help="split the output into fixed-size volumes named DEST.001, "
         "DEST.002, ... (e.g. --split 100M)",
     )
+    compress_parser.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        metavar="N",
+        help="Zstandard compression worker threads; 0 uses all cores "
+        "(default: single-threaded)",
+    )
     _add_operation_options(compress_parser)
     _add_json_option(compress_parser)
 
@@ -742,6 +750,7 @@ def _run(args: argparse.Namespace) -> None:
                 extra_sources=tuple(sources[1:]),
                 exclude=tuple(args.exclude or ()),
                 split_size=parse_size(args.split) if args.split else None,
+                threads=args.jobs,
             ),
             callback,
         )

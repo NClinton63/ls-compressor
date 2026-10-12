@@ -52,6 +52,41 @@ def test_file_roundtrip_all_algorithms(
     assert updates[-1].percentage == 100.0
 
 
+@pytest.mark.parametrize("threads", [None, 1, 0, 2, 8])
+def test_zstd_threads_roundtrip(tmp_path: Path, threads: int | None) -> None:
+    """Multi-threaded Zstandard output stays valid and lossless."""
+    payload = os.urandom(256 * 1024)
+    source = tmp_path / "blob.bin"
+    source.write_bytes(payload)
+    archive = tmp_path / "blob.zst"
+    restored = tmp_path / "restored.bin"
+
+    compress(CompressionRequest(source, archive, threads=threads))
+    decompress(DecompressionRequest(archive, restored))
+
+    assert restored.read_bytes() == payload
+
+
+def test_zstd_threads_apply_to_tar_container(tmp_path: Path) -> None:
+    """Directory archives also honor the worker count."""
+    source_dir = tmp_path / "data"
+    source_dir.mkdir()
+    (source_dir / "a.bin").write_bytes(os.urandom(64 * 1024))
+    (source_dir / "b.bin").write_bytes(os.urandom(64 * 1024))
+    archive = tmp_path / "data.tar.zst"
+    extracted = tmp_path / "out"
+
+    compress(CompressionRequest(source_dir, archive, threads=2))
+    decompress(DecompressionRequest(archive, extracted))
+
+    assert (extracted / "data" / "a.bin").read_bytes() == (
+        source_dir / "a.bin"
+    ).read_bytes()
+    assert (extracted / "data" / "b.bin").read_bytes() == (
+        source_dir / "b.bin"
+    ).read_bytes()
+
+
 @pytest.mark.parametrize(
     "algorithm", [a for a in CompressionAlgorithm if a.can_compress]
 )

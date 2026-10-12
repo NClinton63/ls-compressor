@@ -81,6 +81,11 @@ cli/ ─┼─> core/          (domain logic: compression, media, encryption, wa
   `verify`, and `list` join the set automatically from any volume; missing
   parts are reported as errors. `core/volumes.py` also exposes
   `parse_size` (e.g. `100M`, `1.5GiB`).
+- **Parallel compression**: `CompressionRequest.threads` (CLI `-j/--jobs`)
+  enables multi-threaded Zstandard encoding for both `.zst` streams and
+  `.tar.zst` containers. `0` uses all available cores; output remains a
+  standard zstd frame readable by any decoder. Other algorithms stay
+  single-threaded.
 - `overwrite` protection: operations refuse to clobber an existing destination
   unless `force`/`--force` is set.
 - **Metadata preservation**: extraction restores modification times recorded in
@@ -254,7 +259,7 @@ Entry point: `ls-compressor` (also `python -m ls_compressor`). Global flags:
 
 | Subcommand | Purpose |
 |------------|---------|
-| `compress SRC… DEST` | Create an archive from one or more sources. Flags: `-a/--algorithm`, `-l/--level`, `--preset`, `-p/--password`, `--encryption`, `--self-extracting`, `--exclude`, `--split`, `-f/--force`, `--no-verify`, `-q/--quiet` |
+| `compress SRC… DEST` | Create an archive from one or more sources. Flags: `-a/--algorithm`, `-l/--level`, `--preset`, `-p/--password`, `--encryption`, `--self-extracting`, `--exclude`, `--split`, `-j/--jobs`, `-f/--force`, `--no-verify`, `-q/--quiet` |
 | `decompress SRC DEST` | Extract an archive (incl. encrypted and `.NNN` volumes). Flags: `-p`, `-f`, `--no-verify`, `-q` |
 | `verify SRC` | Validate archive integrity; handles encrypted and split-volume inputs with `-p` |
 | `list`/`ls SRC` | List archive members and sizes without extracting; handles encrypted and self-extracting inputs with `-p` |

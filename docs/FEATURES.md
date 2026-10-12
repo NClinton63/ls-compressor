@@ -185,7 +185,19 @@ changing the public API.
   whitespace and viewBox normalization, color shortening; `<title>` and other
   accessibility content is preserved).
 - **Video:** `.mp4 .mov .avi .mkv .webm .m4v .flv .wmv` — recompressed via
-  FFmpeg (bundled through `imageio[ffmpeg]`).
+  FFmpeg (bundled through `imageio[ffmpeg]`). Animated GIFs are also detected
+  as video inputs (FFmpeg probe).
+
+**Video output formats** — the destination extension selects the encoder for
+video sources:
+
+- `.mp4`/`.mov`/etc. — H.264 (`libx264`) with `video_preset` + `video_crf`.
+- `.webm` — VP9 (`libvpx-vp9`, CRF 0–63) with Opus audio.
+- `.gif` — animated GIF via the `palettegen`/`paletteuse` filter pipeline
+  (15 fps, 480px width, looping). Audio is dropped.
+- `.webp` — animated WebP (`libwebp_anim`, looping). Audio is dropped;
+  `quality` maps to `-q:v`. Verified via Pillow because the bundled FFmpeg
+  cannot decode animated WebP.
 
 **Output formats:** PNG, JPEG, WebP, AVIF, and video. The destination
 extension picks the output format, so `media in.heic out.webp` converts

@@ -256,10 +256,15 @@ def optimize_media(
     prepare_destination(request.destination, overwrite=request.overwrite)
     total = source_size(request.source)
     progress = ProgressReporter(OperationKind.MEDIA_OPTIMIZE, total, callback)
-    optimizer: _MediaOptimizer = _optimizer_for(media_format)
     temporary = _temporary_path(request.destination)
     try:
         output_format = _destination_format(request.destination, media_format)
+        # FFmpeg handles any conversion that starts or ends in a video
+        # container (including animated GIF/WebP targets).
+        if MediaFormat.VIDEO in {media_format, output_format}:
+            optimizer: _MediaOptimizer = _VideoOptimizer()
+        else:
+            optimizer = _optimizer_for(media_format)
         optimizer.optimize(request, temporary, output_format, progress)
         integrity_verified = optimizer.verify(request, temporary)
         replace_path(temporary, request.destination, overwrite=request.overwrite)
@@ -285,6 +290,8 @@ def optimize_media(
 def _destination_format(destination: Path, source_format: MediaFormat) -> MediaFormat:
     """Return the requested output media format, defaulting to the source format."""
     suffix = destination.suffix.lower()
+    if source_format is MediaFormat.VIDEO and suffix in {".gif", ".webp", ".webm"}:
+        return MediaFormat.VIDEO
     if suffix in {".png"}:
         return MediaFormat.PNG
     if suffix in {".jpg", ".jpeg"}:
@@ -295,7 +302,20 @@ def _destination_format(destination: Path, source_format: MediaFormat) -> MediaF
         return MediaFormat.AVIF
     if suffix in {".svg"}:
         return MediaFormat.SVG
-    if suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".flv", ".wmv"}:
+    if suffix == ".gif":
+        # Video sources already returned VIDEO above; an image targeting .gif
+        # stays on the image path.
+        return MediaFormat.GIF
+    if suffix in {
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".mkv",
+        ".webm",
+        ".m4v",
+        ".flv",
+        ".wmv",
+    }:
         return MediaFormat.VIDEO
     return source_format
 
@@ -569,6 +589,15 @@ class _VideoOptimizer(_MediaOptimizer):
 
     def verify(self, request: MediaOptimizationRequest, destination: Path) -> bool:
         """Confirm the output video can be probed by FFmpeg."""
+        if destination.suffix.lower() == ".webp":
+            # Animated WebP decodes in Pillow but not the bundled FFmpeg build.
+            try:
+                with Image.open(destination) as image:
+                    image.verify()
+                return True
+            except Exception as error:
+                _LOGGER.warning("Animated WebP verification failed: %s", error)
+                return False
         try:
             from imageio_ffmpeg import get_ffmpeg_exe
 
@@ -639,6 +668,59 @@ class _VideoOptimizer(_MediaOptimizer):
         ffmpeg: str,
     ) -> list[str]:
         """Build an FFmpeg command tuned to the request settings."""
+        suffix = destination.suffix.lower()
+        base = [ffmpeg, "-hide_banner", "-loglevel", "info", "-i", str(request.source)]
+        if suffix == ".gif":
+            return [
+                *base,
+                "-vf",
+                "fps=15,scale=480:-1:flags=lanczos,split[a][b];"
+                "[a]palettegen[p];[b][p]paletteuse",
+                "-loop",
+                "0",
+                "-an",
+                "-y",
+                str(destination),
+            ]
+        if suffix == ".webp":
+            quality = request.quality if request.quality is not None else 75
+            return [
+                *base,
+                "-c:v",
+                "libwebp_anim",
+                "-loop",
+                "0",
+                "-lossless",
+                "0",
+                "-q:v",
+                str(min(100, max(0, quality))),
+                "-an",
+                "-y",
+                str(destination),
+            ]
+        if suffix == ".webm":
+            crf = request.video_crf if request.video_crf is not None else 33
+            if not 0 <= crf <= 63:
+                raise InvalidRequestError("WebM CRF must be between 0 and 63")
+            return [
+                *base,
+                "-c:v",
+                "libvpx-vp9",
+                "-crf",
+                str(crf),
+                "-b:v",
+                "0",
+                "-row-mt",
+                "1",
+                "-cpu-used",
+                "2",
+                "-deadline",
+                "good",
+                "-c:a",
+                "libopus",
+                "-y",
+                str(destination),
+            ]
         preset = request.video_preset
         if preset not in self._VIDEO_PRESETS:
             raise InvalidRequestError(f"Unsupported video preset: {preset}")
@@ -646,12 +728,7 @@ class _VideoOptimizer(_MediaOptimizer):
         if not 0 <= crf <= 51:
             raise InvalidRequestError("Video CRF must be between 0 and 51")
         return [
-            ffmpeg,
-            "-hide_banner",
-            "-loglevel",
-            "info",
-            "-i",
-            str(request.source),
+            *base,
             "-c:v",
             "libx264",
             "-preset",

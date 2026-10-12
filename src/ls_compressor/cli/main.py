@@ -41,6 +41,7 @@ from ls_compressor.core.exceptions import (
     EncryptionError,
     InvalidRequestError,
 )
+from ls_compressor.core.filesystem import source_size
 from ls_compressor.core.volumes import is_volume, join_volumes, parse_size
 from ls_compressor.core.watch import (
     WatchFolderConfig,
@@ -255,6 +256,17 @@ def build_parser(
     )
     watch_parser.add_argument(
         "--quiet", "-q", action="store_true", help="suppress per-file output"
+    )
+
+    bench_parser = subparsers.add_parser(
+        "bench", help="benchmark every algorithm against one source"
+    )
+    bench_parser.add_argument("source", type=Path)
+    bench_parser.add_argument(
+        "--level",
+        "-l",
+        type=int,
+        help="compression level applied to every algorithm (default: per-algorithm)",
     )
 
     shell_parser = subparsers.add_parser(
@@ -490,6 +502,45 @@ def _handle_watch_event(event: object, quiet: bool) -> None:
         )
 
 
+def _run_bench(args: argparse.Namespace) -> None:
+    """Time every write-capable algorithm on one source and print a table."""
+    source_bytes = source_size(args.source)
+    results: list[tuple[CompressionAlgorithm, float, int]] = []
+    with tempfile.TemporaryDirectory() as temp_dir:
+        for algorithm in CompressionAlgorithm:
+            if not algorithm.can_compress:
+                continue
+            destination = Path(temp_dir) / f"bench.{algorithm.value}"
+            try:
+                result = compress(
+                    CompressionRequest(
+                        source=args.source,
+                        destination=destination,
+                        algorithm=algorithm,
+                        compression_level=args.level,
+                        verify=False,
+                    )
+                )
+            except CompressionError as error:
+                _LOGGER.warning(
+                    "Benchmark skipped algorithm=%s error=%s",
+                    algorithm.value,
+                    error,
+                )
+                continue
+            results.append((algorithm, result.elapsed_seconds, result.output_size))
+    if not results:
+        raise CompressionError("No algorithm completed the benchmark")
+    print(f"Benchmark: {args.source} ({_human_size(source_bytes)} source)")
+    print(f"{'Algorithm':<12} {'Time':>10} {'Output':>12} {'Ratio':>8}")
+    for algorithm, elapsed, output_size in sorted(results, key=lambda r: r[2]):
+        ratio = output_size / source_bytes if source_bytes else 0.0
+        print(
+            f"{algorithm.display_name:<12} {elapsed:>9.3f}s "
+            f"{_human_size(output_size):>12} {ratio:>7.2f}x"
+        )
+
+
 def _run_shell(args: argparse.Namespace) -> None:
     """Install, remove, or report OS shell integration entries."""
     if args.action == "status":
@@ -621,6 +672,10 @@ def _run(args: argparse.Namespace) -> None:
 
     if args.command == "watch":
         _run_watch(args)
+        return
+
+    if args.command == "bench":
+        _run_bench(args)
         return
 
     if args.command == "shell":

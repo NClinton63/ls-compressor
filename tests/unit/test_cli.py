@@ -258,6 +258,26 @@ def test_decompress_dry_run_lists_entries(
     assert not destination.exists()
 
 
+def test_bench_reports_row_per_algorithm(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """bench times every write-capable algorithm and prints a table."""
+    from ls_compressor.core import CompressionAlgorithm
+
+    source = tmp_path / "payload.bin"
+    source.write_bytes(b"bench me " * 500)
+
+    status = main(["bench", str(source)])
+    captured = capsys.readouterr()
+
+    assert status == 0
+    for algorithm in CompressionAlgorithm:
+        if algorithm.can_compress:
+            assert algorithm.display_name in captured.out
+    assert "Ratio" in captured.out
+    assert captured.err == ""
+
+
 def test_media_command_reports_unsupported_format(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

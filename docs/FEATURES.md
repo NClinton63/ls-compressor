@@ -174,9 +174,15 @@ changing the public API.
 
 **Supported inputs:**
 
-- **Images:** PNG, JPEG, WebP — handled by Pillow.
+- **Images:** PNG, JPEG, WebP, AVIF, GIF, BMP, HEIC/HEIF — handled by Pillow
+  (AVIF via Pillow's built-in codec, HEIC via `pillow-heif`).
 - **Video:** `.mp4 .mov .avi .mkv .webm .m4v .flv .wmv` — recompressed via
   FFmpeg (bundled through `imageio[ffmpeg]`).
+
+**Output formats:** PNG, JPEG, WebP, AVIF, and video. The destination
+extension picks the output format, so `media in.heic out.webp` converts
+between formats; GIF, BMP, and HEIC are decode-only inputs (animated GIFs
+convert from their first frame).
 
 **Detection:** `detect_media_format()` prefers extension mapping, falls back to
 Pillow content sniffing, then an FFmpeg probe (`ffmpeg -i … -f null -`).

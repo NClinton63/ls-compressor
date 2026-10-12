@@ -51,6 +51,7 @@ from ls_compressor.core.watch import (
     WatchOperationType,
     process_watch_event,
 )
+from ls_compressor.core.watermark import WatermarkPosition, apply_watermark
 from ls_compressor.infrastructure import shell_integration
 from ls_compressor.infrastructure.cli_config import load_cli_config
 from ls_compressor.infrastructure.logging import configure_logging
@@ -262,6 +263,27 @@ def build_parser(
         help="scale pack: width of the @1x rendition in pixels (default 320)",
     )
     _add_json_option(pack_parser)
+    watermark_parser = subparsers.add_parser(
+        "watermark", help="stamp text onto an image"
+    )
+    watermark_parser.add_argument("source", type=Path)
+    watermark_parser.add_argument("destination", type=Path)
+    watermark_parser.add_argument("--text", required=True, help="watermark text")
+    watermark_parser.add_argument(
+        "--position",
+        choices=[position.value for position in WatermarkPosition],
+        default=WatermarkPosition.BOTTOM_RIGHT.value,
+    )
+    watermark_parser.add_argument(
+        "--opacity",
+        type=float,
+        default=0.4,
+        help="text opacity 0-1 (default 0.4)",
+    )
+    watermark_parser.add_argument(
+        "--force", "-f", action="store_true", help="overwrite existing output"
+    )
+    _add_json_option(watermark_parser)
 
     watch_parser = subparsers.add_parser(
         "watch", help="monitor a folder and process new files automatically"
@@ -867,6 +889,22 @@ def _run(args: argparse.Namespace) -> None:
             print(f"{args.type} pack -> {args.destination}")
             for name in names:
                 print(f"  {name}")
+        return
+
+    if args.command == "watermark":
+        result_path = apply_watermark(
+            args.source,
+            args.destination,
+            args.text,
+            position=WatermarkPosition(args.position),
+            opacity=args.opacity,
+            overwrite=args.force,
+        )
+        _LOGGER.info("Operation succeeded command=%s", args.command)
+        if args.json:
+            _emit_json({"command": "watermark", "output": str(result_path)})
+        else:
+            print(f"Watermarked: {result_path}")
         return
 
     if args.command == "watch":

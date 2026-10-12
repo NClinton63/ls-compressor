@@ -63,6 +63,7 @@ from ls_compressor.core.volumes import (
     volume_base,
     volume_parts,
 )
+from ls_compressor.core.watermark import WatermarkPosition, apply_watermark
 
 __all__ = [
     "ArchiveEntry",
@@ -87,6 +88,8 @@ __all__ = [
     "ProgressCallback",
     "ProgressReporter",
     "UnsupportedFormatError",
+    "WatermarkPosition",
+    "apply_watermark",
     "compress",
     "create_self_extracting_archive",
     "decompress",

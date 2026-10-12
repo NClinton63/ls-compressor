@@ -228,6 +228,19 @@ resampling; images already within the limit pass through untouched.
 Results report the detected `MediaFormat`, compression ratio, and savings
 percentage, with the same progress-callback contract as archive operations.
 
+### Responsive export packs
+
+`core/export_packs.py` mirrors the web platform's `lib/exports.ts` and writes
+ZIP packs (never overwriting an existing destination):
+
+- `generate_scale_pack(source, destination, base_width)` — `{name}@1x/2x/3x.png`,
+  larger scales capped at the source width.
+- `generate_srcset(source, destination)` — `{name}-{width}w.webp` renditions
+  at 480/960/1440/2160 px (widths above the source are skipped) at quality 85,
+  plus a ready-to-paste `srcset-snippet.html` with the `<img>` tag.
+
+CLI: `pack SRC DEST.zip --type scale|srcset [--width N]` (`--json` supported).
+
 ---
 
 ## 4. Watch folders (Hot Folders)

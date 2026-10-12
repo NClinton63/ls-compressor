@@ -243,6 +243,25 @@ def build_parser(
         "--force", "-f", action="store_true", help="overwrite existing output"
     )
     _add_json_option(icons_parser)
+    pack_parser = subparsers.add_parser(
+        "pack",
+        help="generate a responsive export pack (@1x/@2x/@3x or srcset)",
+    )
+    pack_parser.add_argument("source", type=Path)
+    pack_parser.add_argument("destination", type=Path, help="output .zip path")
+    pack_parser.add_argument(
+        "--type",
+        choices=["scale", "srcset"],
+        required=True,
+        help="scale: {name}@1x/2x/3x PNGs; srcset: WebP widths + HTML snippet",
+    )
+    pack_parser.add_argument(
+        "--width",
+        type=int,
+        default=320,
+        help="scale pack: width of the @1x rendition in pixels (default 320)",
+    )
+    _add_json_option(pack_parser)
 
     watch_parser = subparsers.add_parser(
         "watch", help="monitor a folder and process new files automatically"
@@ -822,6 +841,32 @@ def _run(args: argparse.Namespace) -> None:
     )
     if args.command == "media":
         _run_media(args, callback)
+        return
+
+    if args.command == "pack":
+        from ls_compressor.core.export_packs import (
+            generate_scale_pack,
+            generate_srcset,
+        )
+
+        if args.type == "scale":
+            names = generate_scale_pack(args.source, args.destination, args.width)
+        else:
+            names = generate_srcset(args.source, args.destination)
+        _LOGGER.info("Operation succeeded command=%s", args.command)
+        if args.json:
+            _emit_json(
+                {
+                    "command": "pack",
+                    "type": args.type,
+                    "destination": str(args.destination),
+                    "files": names,
+                }
+            )
+        else:
+            print(f"{args.type} pack -> {args.destination}")
+            for name in names:
+                print(f"  {name}")
         return
 
     if args.command == "watch":

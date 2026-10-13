@@ -661,6 +661,8 @@ def _run(args: argparse.Namespace) -> None:
             print(f"Palette ({len(colors)} colors): {args.source}")
             for color in colors:
                 print(f"  {color}")
+        return
+
     if args.command == "icons":
         members = generate_icon_pack(
             args.source, args.destination, overwrite=args.force

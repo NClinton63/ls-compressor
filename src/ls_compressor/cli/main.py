@@ -26,6 +26,7 @@ from ls_compressor.core import (
     OperationResult,
     compress,
     decompress,
+    extract_palette,
     format_listing,
     list_archive,
     optimize_media,
@@ -211,6 +212,15 @@ def build_parser(
         "--quiet", "-q", action="store_true", help="suppress progress output"
     )
     _add_json_option(media_parser)
+
+    palette_parser = subparsers.add_parser(
+        "palette", help="extract dominant colors from an image"
+    )
+    palette_parser.add_argument("source", type=Path)
+    palette_parser.add_argument(
+        "--count", "-n", type=int, default=8, help="number of colors (default 8)"
+    )
+    _add_json_option(palette_parser)
 
     watch_parser = subparsers.add_parser(
         "watch", help="monitor a folder and process new files automatically"
@@ -626,6 +636,21 @@ def _run(args: argparse.Namespace) -> None:
         print(f"{algorithm.display_name} archive: {args.source}")
         print(format_listing(entries, human_size=_human_size))
         print(f"{len(files)} files, {_human_size(total)} uncompressed")
+        return
+    if args.command == "palette":
+        colors = extract_palette(args.source, count=args.count)
+        if args.json:
+            _emit_json(
+                {
+                    "operation": "palette",
+                    "source": str(args.source),
+                    "colors": colors,
+                }
+            )
+        else:
+            print(f"Palette ({len(colors)} colors): {args.source}")
+            for color in colors:
+                print(f"  {color}")
         return
     if args.command == "verify":
         with tempfile.TemporaryDirectory() as temp_dir:

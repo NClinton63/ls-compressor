@@ -42,6 +42,7 @@ from ls_compressor.core.models import (
     OperationResult,
     PlanMember,
 )
+from ls_compressor.core.palette import extract_palette
 from ls_compressor.core.passwords import PasswordStrength, password_strength
 from ls_compressor.core.progress import ProgressCallback, ProgressReporter
 from ls_compressor.core.verification import (
@@ -88,6 +89,7 @@ __all__ = [
     "detect_algorithm",
     "detect_media_format",
     "encrypt_archive",
+    "extract_palette",
     "extract_payload",
     "format_listing",
     "is_encrypted_file",

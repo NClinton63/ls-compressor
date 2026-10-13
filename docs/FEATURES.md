@@ -297,7 +297,10 @@ Sidebar-navigated main window (`gui/main_window.py`) with five pages:
   toggle.
 - **Decompress** — drop an archive, optional password for encrypted
   containers.
-- **Optimize** — media optimization with lossless/lossy mode selector.
+- **Optimize** — media optimization with lossless/lossy mode selector and a
+  before/after comparison slider (`CompareWidget`) that appears when an image
+  job completes; drag horizontally to wipe between the original and the
+  optimized output. Non-image results (video) leave it hidden.
 - **History** — table of completed jobs with results.
 - **Settings** — inline editor backed by `AppSettings`, plus watch-folder
   management (add/remove/persist).

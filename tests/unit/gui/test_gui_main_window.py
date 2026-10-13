@@ -214,3 +214,38 @@ def test_main_window_enqueues_watch_event(qapp, tmp_path: Path) -> None:
     ]
     assert len(completed) == 1
     assert completed[0].destination == output_folder / "auto.txt.zip"
+
+
+def test_media_completion_shows_comparison_slider(qapp, tmp_path: Path) -> None:
+    """A finished image job reveals the before/after comparison widget."""
+    pytest.importorskip("PIL")
+    source = tmp_path / "compare.png"
+    Image.new("RGBA", (64, 64), (0, 128, 255, 255)).save(source, format="PNG")
+    window = MainWindow(AppSettings())
+    assert window._optimize_page._compare.isHidden()
+    window._on_files_dropped(
+        [source], window._optimize_page.table(), GuiJobKind.MEDIA_OPTIMIZE
+    )
+    window._optimize_page.table().selectAll()
+
+    window._queue_selected(GuiJobKind.MEDIA_OPTIMIZE)
+
+    assert window._queue._pool.waitForDone(5000)
+    _process_events()
+
+    compare = window._optimize_page._compare
+    assert not compare.isHidden()
+    assert compare._before is not None and compare._after is not None
+
+
+def test_comparison_ignores_non_image_output(qapp, tmp_path: Path) -> None:
+    """Non-image results leave the comparison widget hidden."""
+    pytest.importorskip("PIL")
+    window = MainWindow(AppSettings())
+    text = tmp_path / "data.txt"
+    text.write_text("not an image")
+    out = tmp_path / "data.bin"
+    out.write_bytes(b"\x00\x01")
+
+    assert not window._optimize_page._compare.set_comparison(text, out)
+    assert window._optimize_page._compare.isHidden()

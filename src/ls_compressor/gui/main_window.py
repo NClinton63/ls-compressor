@@ -656,7 +656,7 @@ class MainWindow(QMainWindow):
         if kind == GuiJobKind.MEDIA_OPTIMIZE:
             extensions = (
                 "*.png *.jpg *.jpeg *.webp *.avif *.gif *.bmp *.heic *.heif "
-                "*.mp4 *.mov *.avi *.mkv *.webm"
+                "*.svg *.mp4 *.mov *.avi *.mkv *.webm"
             )
             filters = f"Images/Videos ({extensions});;All files (*)"
             files, _ = QFileDialog.getOpenFileNames(

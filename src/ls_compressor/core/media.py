@@ -60,6 +60,7 @@ class MediaFormat(StrEnum):
     GIF = "gif"
     BMP = "bmp"
     HEIC = "heic"
+    SVG = "svg"
     VIDEO = "video"
 
     @property
@@ -73,6 +74,7 @@ class MediaFormat(StrEnum):
             self.GIF: "GIF Image",
             self.BMP: "BMP Image",
             self.HEIC: "HEIC Image",
+            self.SVG: "SVG Image",
             self.VIDEO: "Video",
         }
         return names[self]
@@ -145,6 +147,7 @@ def detect_media_format(source: Path) -> MediaFormat:
         ".bmp",
         ".heic",
         ".heif",
+        ".svg",
     }
     video_suffixes = {
         ".mp4",
@@ -182,6 +185,7 @@ def _image_format_from_suffix(suffix: str) -> MediaFormat:
         ".bmp": MediaFormat.BMP,
         ".heic": MediaFormat.HEIC,
         ".heif": MediaFormat.HEIC,
+        ".svg": MediaFormat.SVG,
     }
     return mapping[suffix]
 
@@ -289,6 +293,8 @@ def _destination_format(destination: Path, source_format: MediaFormat) -> MediaF
         return MediaFormat.WEBP
     if suffix in {".avif"}:
         return MediaFormat.AVIF
+    if suffix in {".svg"}:
+        return MediaFormat.SVG
     if suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".flv", ".wmv"}:
         return MediaFormat.VIDEO
     return source_format
@@ -324,6 +330,7 @@ def _optimizer_for(media_format: MediaFormat) -> _MediaOptimizer:
         MediaFormat.GIF: _ImageOptimizer,
         MediaFormat.BMP: _ImageOptimizer,
         MediaFormat.HEIC: _ImageOptimizer,
+        MediaFormat.SVG: _SvgOptimizer,
         MediaFormat.VIDEO: _VideoOptimizer,
     }
     return strategies[media_format]()
@@ -471,6 +478,56 @@ def _clamp_quality(quality: int | None, output_format: MediaFormat) -> int:
     if output_format in {MediaFormat.WEBP, MediaFormat.AVIF}:
         return min(100, max(1, quality))
     return min(95, max(1, quality))
+
+
+class _SvgOptimizer(_MediaOptimizer):
+    """Scour-based optimizer for SVG vector files."""
+
+    def optimize(
+        self,
+        request: MediaOptimizationRequest,
+        destination: Path,
+        output_format: MediaFormat,
+        progress: ProgressReporter,
+    ) -> None:
+        """Minify an SVG document while keeping it renderable."""
+        from scour import scour
+
+        progress.advance(0, request.source)
+        try:
+            source = request.source.read_text(encoding="utf-8")
+        except UnicodeDecodeError as error:
+            raise InvalidRequestError(
+                f"SVG file is not valid UTF-8 text: {request.source}"
+            ) from error
+        options = scour.sanitizeOptions()
+        options.strip_comments = True
+        options.remove_metadata = True
+        options.newlines = False
+        options.indent_type = "none"
+        options.simple_colors = True
+        options.enable_viewboxing = True
+        options.group_collapse = True
+        options.quiet = True
+        try:
+            optimized = scour.scourString(source, options)
+        except Exception as error:
+            raise InvalidRequestError(
+                f"SVG optimization failed for: {request.source}"
+            ) from error
+        destination.write_text(optimized, encoding="utf-8")
+        progress.advance(request.source.stat().st_size, request.source)
+
+    def verify(self, source: Path, destination: Path) -> bool:
+        """Confirm the optimized SVG still parses as an svg document."""
+        try:
+            from xml.etree import ElementTree
+
+            root = ElementTree.parse(destination).getroot()
+            return root.tag.rpartition("}")[2] == "svg"
+        except Exception as error:
+            _LOGGER.warning("SVG verification failed: %s", error)
+            return False
 
 
 class _VideoOptimizer(_MediaOptimizer):

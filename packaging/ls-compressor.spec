@@ -72,6 +72,7 @@ a = Analysis(
         "argon2.low_level",
         "py7zr",
         "rarfile",
+        "scour",
         "pyzipper",
         "cryptography",
         "cryptography.hazmat",

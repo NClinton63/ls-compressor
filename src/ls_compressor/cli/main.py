@@ -176,10 +176,16 @@ def build_parser(
     _add_json_option(list_parser)
 
     media_parser = subparsers.add_parser(
-        "media", help="optimize a media asset (image or video)"
+        "media", help="optimize media assets (images, SVG, or video)"
     )
-    media_parser.add_argument("source", type=Path)
-    media_parser.add_argument("destination", type=Path)
+    media_parser.add_argument(
+        "paths",
+        type=Path,
+        nargs="+",
+        metavar="PATH",
+        help="one or more sources followed by the destination; a directory "
+        "source or multiple sources means DEST is an output folder",
+    )
     media_parser.add_argument(
         "--mode",
         choices=[mode.value for mode in MediaOptimizationMode],
@@ -205,6 +211,12 @@ def build_parser(
         type=int,
         metavar="PX",
         help="downscale images so the longest edge fits PX pixels",
+    )
+    media_parser.add_argument(
+        "--format",
+        choices=["png", "jpg", "webp", "avif"],
+        help="convert batch output to this format (keeps source format when "
+        "omitted)",
     )
     media_parser.add_argument(
         "--force", "-f", action="store_true", help="overwrite existing output"
@@ -498,6 +510,89 @@ def _print_media_result(result: MediaOptimizationResult) -> None:
     print(f"Verified: {'yes' if result.integrity_verified else 'no'}")
 
 
+def _media_sources(args: argparse.Namespace) -> list[Path]:
+    """Expand media command paths into the concrete files to process."""
+    sources = args.paths[:-1]
+    if not sources:
+        raise InvalidRequestError(
+            "media requires at least one source and a destination"
+        )
+    files: list[Path] = []
+    for source in sources:
+        if source.is_dir():
+            files.extend(sorted(path for path in source.iterdir() if path.is_file()))
+        else:
+            files.append(source)
+    return files
+
+
+def _run_media(args: argparse.Namespace, callback: object) -> None:
+    """Run single-file or batch media optimization."""
+    files = _media_sources(args)
+    destination = args.paths[-1]
+    batch = len(args.paths) > 2 or any(source.is_dir() for source in args.paths[:-1])
+    if batch:
+        destination.mkdir(parents=True, exist_ok=True)
+        if not destination.is_dir():
+            raise InvalidRequestError(
+                "Batch media optimization requires a destination directory"
+            )
+    results = []
+    skipped = 0
+    for source in files:
+        if batch:
+            suffix = f".{args.format}" if args.format else source.suffix
+            target = destination / f"{source.stem}{suffix}"
+        else:
+            target = destination
+        try:
+            results.append(
+                optimize_media(
+                    MediaOptimizationRequest(
+                        source=source,
+                        destination=target,
+                        mode=MediaOptimizationMode(args.mode),
+                        quality=args.quality,
+                        overwrite=True if batch else args.force,
+                        video_preset=args.video_preset,
+                        video_crf=args.video_crf,
+                        max_dimension=args.max_size,
+                    ),
+                    callback,
+                )
+            )
+        except CompressionError as error:
+            _LOGGER.warning("Skipping unsupported media source=%s", source)
+            print(f"Skipped {source}: {error}", file=sys.stderr)
+            skipped += 1
+    if not results:
+        raise InvalidRequestError("No supported media files to process")
+    if callback is not None:
+        print(file=sys.stderr)
+    _LOGGER.info(
+        "Operation succeeded command=%s files=%d skipped=%d",
+        args.command,
+        len(results),
+        skipped,
+    )
+    if args.json:
+        if batch or len(results) > 1:
+            _emit_json(
+                {
+                    "operation": "media",
+                    "files": [_media_result_dict(r) for r in results],
+                    "skipped": skipped,
+                }
+            )
+        else:
+            _emit_json(_media_result_dict(results[0]))
+        return
+    for result in results:
+        _print_media_result(result)
+    if skipped:
+        print(f"Skipped: {skipped} file(s)")
+
+
 def _run_watch(args: argparse.Namespace) -> None:
     """Run a foreground watch service until interrupted."""
     config = WatchFolderConfig(
@@ -726,26 +821,7 @@ def _run(args: argparse.Namespace) -> None:
         else _progress
     )
     if args.command == "media":
-        result = optimize_media(
-            MediaOptimizationRequest(
-                source=args.source,
-                destination=args.destination,
-                mode=MediaOptimizationMode(args.mode),
-                quality=args.quality,
-                overwrite=args.force,
-                video_preset=args.video_preset,
-                video_crf=args.video_crf,
-                max_dimension=args.max_size,
-            ),
-            callback,
-        )
-        if callback is not None:
-            print(file=sys.stderr)
-        _LOGGER.info("Operation succeeded command=%s", args.command)
-        if args.json:
-            _emit_json(_media_result_dict(result))
-        else:
-            _print_media_result(result)
+        _run_media(args, callback)
         return
 
     if args.command == "watch":

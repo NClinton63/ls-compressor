@@ -281,7 +281,7 @@ Entry point: `ls-compressor` (also `python -m ls_compressor`). Global flags:
 | `decompress SRC DEST` | Extract an archive (incl. encrypted and `.NNN` volumes). Flags: `-p`, `-f`, `--no-verify`, `-q` |
 | `verify SRC` | Validate archive integrity; handles encrypted and split-volume inputs with `-p` |
 | `list`/`ls SRC` | List archive members and sizes without extracting; handles encrypted and self-extracting inputs with `-p` |
-| `media SRC DEST` | Optimize image/video. Flags: `--mode lossless|lossy`, `--quality`, `--video-preset`, `--video-crf`, `-f`, `-q` |
+| `media SRC… DEST` | Optimize image/video. Multiple sources or a folder source mean DEST is an output folder processed as a batch. Flags: `--mode lossless|lossy`, `--quality`, `--max-size PX`, `--format png|jpg|webp` (batch transcode), `--video-preset`, `--video-crf`, `-f`, `-q` |
 | `palette SRC` | Print dominant colors of an image as hex. Flags: `-n/--count`, `--json` |
 | `icons SRC DEST.zip` | Export a favicon/app-icon pack ZIP (favicon-16/32/48, apple-touch-icon, android-chrome-192/512, `site.webmanifest`, `README-snippet.html`) — same output as the web edition |
 | `watch FOLDER -o OUT` | Foreground hot-folder watcher. Flags: `--operation`, `-a`, `-l`, `--media-mode`, `-p`, `--self-extracting`, `--recursive/--no-recursive`, `-q` |

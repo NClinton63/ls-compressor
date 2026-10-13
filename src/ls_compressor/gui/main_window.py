@@ -643,7 +643,10 @@ class MainWindow(QMainWindow):
     def _add_files(self, table: JobTable, kind: GuiJobKind) -> None:
         default_dir = str(self._settings.last_used_folder or Path.home())
         if kind == GuiJobKind.MEDIA_OPTIMIZE:
-            extensions = "*.png *.jpg *.jpeg *.webp *.mp4 *.mov *.avi *.mkv *.webm"
+            extensions = (
+                "*.png *.jpg *.jpeg *.webp *.avif *.gif *.bmp *.heic *.heif "
+                "*.mp4 *.mov *.avi *.mkv *.webm"
+            )
             filters = f"Images/Videos ({extensions});;All files (*)"
             files, _ = QFileDialog.getOpenFileNames(
                 self, "Select media files", default_dir, filters

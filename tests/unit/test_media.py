@@ -37,6 +37,31 @@ def _make_webp(path: Path, *, width: int = 64, height: int = 64) -> None:
     image.save(path, format="WEBP")
 
 
+def _make_avif(path: Path, *, width: int = 64, height: int = 64) -> None:
+    """Write a simple AVIF file for testing."""
+    image = Image.new("RGB", (width, height), (120, 60, 30))
+    image.save(path, format="AVIF")
+
+
+def _make_gif(path: Path, *, width: int = 64, height: int = 64) -> None:
+    """Write a simple GIF file for testing."""
+    image = Image.new("P", (width, height))
+    image.save(path, format="GIF")
+
+
+def _make_bmp(path: Path, *, width: int = 64, height: int = 64) -> None:
+    """Write a simple BMP file for testing."""
+    image = Image.new("RGB", (width, height), (10, 200, 90))
+    image.save(path, format="BMP")
+
+
+def _make_heic(path: Path, *, width: int = 64, height: int = 64) -> None:
+    """Write a simple HEIC file for testing via pillow-heif."""
+    pytest.importorskip("pillow_heif")
+    image = Image.new("RGB", (width, height), (200, 100, 40))
+    image.save(path, format="HEIF")
+
+
 def _make_video(path: Path) -> None:
     """Write a tiny MP4 video using FFmpeg."""
     try:
@@ -104,6 +129,26 @@ class TestDetectMediaFormat:
     def test_detect_video(self, video_file: Path) -> None:
         assert detect_media_format(video_file) is MediaFormat.VIDEO
 
+    def test_detect_avif(self, tmp_path: Path) -> None:
+        path = tmp_path / "source.avif"
+        _make_avif(path)
+        assert detect_media_format(path) is MediaFormat.AVIF
+
+    def test_detect_gif(self, tmp_path: Path) -> None:
+        path = tmp_path / "source.gif"
+        _make_gif(path)
+        assert detect_media_format(path) is MediaFormat.GIF
+
+    def test_detect_bmp(self, tmp_path: Path) -> None:
+        path = tmp_path / "source.bmp"
+        _make_bmp(path)
+        assert detect_media_format(path) is MediaFormat.BMP
+
+    def test_detect_heic(self, tmp_path: Path) -> None:
+        path = tmp_path / "source.heic"
+        _make_heic(path)
+        assert detect_media_format(path) is MediaFormat.HEIC
+
     def test_detect_unsupported(self, tmp_path: Path) -> None:
         path = tmp_path / "plain.txt"
         path.write_text("not media")
@@ -166,6 +211,34 @@ class TestOptimizeImages:
         assert result.media_format is MediaFormat.JPEG
         assert destination.exists()
         assert Image.open(destination).format == "WEBP"
+
+    def test_convert_png_to_avif(self, png_file: Path, tmp_path: Path) -> None:
+        destination = tmp_path / "output.avif"
+        request = MediaOptimizationRequest(source=png_file, destination=destination)
+        result = optimize_media(request)
+        assert destination.exists()
+        assert Image.open(destination).format == "AVIF"
+        assert result.integrity_verified is True
+
+    def test_convert_gif_to_webp(self, tmp_path: Path) -> None:
+        source = tmp_path / "source.gif"
+        _make_gif(source)
+        destination = tmp_path / "output.webp"
+        result = optimize_media(
+            MediaOptimizationRequest(source=source, destination=destination)
+        )
+        assert result.media_format is MediaFormat.GIF
+        assert Image.open(destination).format == "WEBP"
+
+    def test_convert_heic_to_jpeg(self, tmp_path: Path) -> None:
+        source = tmp_path / "source.heic"
+        _make_heic(source)
+        destination = tmp_path / "output.jpg"
+        result = optimize_media(
+            MediaOptimizationRequest(source=source, destination=destination)
+        )
+        assert result.media_format is MediaFormat.HEIC
+        assert Image.open(destination).format == "JPEG"
 
     def test_progress_callback_receives_updates(
         self, png_file: Path, tmp_path: Path

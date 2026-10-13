@@ -18,9 +18,19 @@ from pathlib import Path
 from typing import ClassVar
 
 from PIL import Image
+from PIL.AvifImagePlugin import AvifImageFile
+from PIL.BmpImagePlugin import BmpImageFile
+from PIL.GifImagePlugin import GifImageFile
 from PIL.JpegImagePlugin import JpegImageFile
 from PIL.PngImagePlugin import PngImageFile
 from PIL.WebPImagePlugin import WebPImageFile
+
+try:
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+except ImportError:  # pragma: no cover - optional dependency
+    pillow_heif = None
 
 from ls_compressor.core.exceptions import (
     CompressionError,
@@ -46,6 +56,10 @@ class MediaFormat(StrEnum):
     PNG = "png"
     JPEG = "jpeg"
     WEBP = "webp"
+    AVIF = "avif"
+    GIF = "gif"
+    BMP = "bmp"
+    HEIC = "heic"
     VIDEO = "video"
 
     @property
@@ -55,6 +69,10 @@ class MediaFormat(StrEnum):
             self.PNG: "PNG Image",
             self.JPEG: "JPEG Image",
             self.WEBP: "WebP Image",
+            self.AVIF: "AVIF Image",
+            self.GIF: "GIF Image",
+            self.BMP: "BMP Image",
+            self.HEIC: "HEIC Image",
             self.VIDEO: "Video",
         }
         return names[self]
@@ -116,7 +134,17 @@ def detect_media_format(source: Path) -> MediaFormat:
     """
     ensure_source(source)
     suffix = source.suffix.lower()
-    image_suffixes = {".png", ".jpg", ".jpeg", ".webp"}
+    image_suffixes = {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".avif",
+        ".gif",
+        ".bmp",
+        ".heic",
+        ".heif",
+    }
     video_suffixes = {
         ".mp4",
         ".mov",
@@ -148,6 +176,11 @@ def _image_format_from_suffix(suffix: str) -> MediaFormat:
         ".jpg": MediaFormat.JPEG,
         ".jpeg": MediaFormat.JPEG,
         ".webp": MediaFormat.WEBP,
+        ".avif": MediaFormat.AVIF,
+        ".gif": MediaFormat.GIF,
+        ".bmp": MediaFormat.BMP,
+        ".heic": MediaFormat.HEIC,
+        ".heif": MediaFormat.HEIC,
     }
     return mapping[suffix]
 
@@ -160,6 +193,14 @@ def _image_format_from_pil(image: Image.Image) -> MediaFormat:
         return MediaFormat.JPEG
     if isinstance(image, WebPImageFile):
         return MediaFormat.WEBP
+    if isinstance(image, AvifImageFile):
+        return MediaFormat.AVIF
+    if isinstance(image, GifImageFile):
+        return MediaFormat.GIF
+    if isinstance(image, BmpImageFile):
+        return MediaFormat.BMP
+    if image.format == "HEIF":
+        return MediaFormat.HEIC
     raise UnsupportedFormatError(f"Unsupported image format: {image.format}")
 
 
@@ -245,6 +286,8 @@ def _destination_format(destination: Path, source_format: MediaFormat) -> MediaF
         return MediaFormat.JPEG
     if suffix in {".webp"}:
         return MediaFormat.WEBP
+    if suffix in {".avif"}:
+        return MediaFormat.AVIF
     if suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".flv", ".wmv"}:
         return MediaFormat.VIDEO
     return source_format
@@ -276,6 +319,10 @@ def _optimizer_for(media_format: MediaFormat) -> _MediaOptimizer:
         MediaFormat.PNG: _ImageOptimizer,
         MediaFormat.JPEG: _ImageOptimizer,
         MediaFormat.WEBP: _ImageOptimizer,
+        MediaFormat.AVIF: _ImageOptimizer,
+        MediaFormat.GIF: _ImageOptimizer,
+        MediaFormat.BMP: _ImageOptimizer,
+        MediaFormat.HEIC: _ImageOptimizer,
         MediaFormat.VIDEO: _VideoOptimizer,
     }
     return strategies[media_format]()
@@ -300,12 +347,13 @@ class _MediaOptimizer(ABC):
 
 
 class _ImageOptimizer(_MediaOptimizer):
-    """Pillow-based optimizer for PNG, JPEG, and WebP images."""
+    """Pillow-based optimizer for raster image formats."""
 
     _PIL_FORMATS: ClassVar[dict[MediaFormat, str]] = {
         MediaFormat.PNG: "PNG",
         MediaFormat.JPEG: "JPEG",
         MediaFormat.WEBP: "WEBP",
+        MediaFormat.AVIF: "AVIF",
     }
 
     def optimize(
@@ -316,6 +364,11 @@ class _ImageOptimizer(_MediaOptimizer):
         progress: ProgressReporter,
     ) -> None:
         """Re-encode an image using format-specific lossless or lossy settings."""
+        if output_format not in self._PIL_FORMATS:
+            raise UnsupportedFormatError(
+                f"Cannot write {output_format.display_name} output; "
+                "use PNG, JPEG, WebP, or AVIF"
+            )
         source_format = detect_media_format(request.source)
         with Image.open(request.source) as image:
             progress.advance(0, request.source)
@@ -355,8 +408,14 @@ class _ImageOptimizer(_MediaOptimizer):
                     mask=image.split()[-1] if image.mode in {"RGBA", "LA"} else None,
                 )
                 return background
-        if image.mode == "P" and output_format in {MediaFormat.PNG, MediaFormat.WEBP}:
+        if image.mode == "P" and output_format in {
+            MediaFormat.PNG,
+            MediaFormat.WEBP,
+            MediaFormat.AVIF,
+        }:
             return image.convert("RGBA")
+        if image.mode in {"CMYK", "I;16", "I", "F"}:
+            return image.convert("RGB")
         return image
 
     @staticmethod
@@ -380,14 +439,18 @@ class _ImageOptimizer(_MediaOptimizer):
             if request.mode is MediaOptimizationMode.LOSSLESS:
                 return {"lossless": True, "quality": 100, "method": 6}
             return {"quality": quality, "method": 6}
+        if output_format is MediaFormat.AVIF:
+            if request.mode is MediaOptimizationMode.LOSSLESS:
+                return {"lossless": True, "quality": 100, "speed": 4}
+            return {"quality": quality, "speed": 6}
         raise UnsupportedFormatError(f"Unsupported output format: {output_format}")
 
 
 def _clamp_quality(quality: int | None, output_format: MediaFormat) -> int:
-    """Return a valid quality value for JPEG/WebP output."""
+    """Return a valid quality value for lossy image output."""
     if quality is None:
         return 90
-    if output_format is MediaFormat.WEBP:
+    if output_format in {MediaFormat.WEBP, MediaFormat.AVIF}:
         return min(100, max(1, quality))
     return min(95, max(1, quality))
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+import sys
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -99,6 +100,7 @@ class MediaOptimizationRequest:
     video_preset: str = "medium"
     video_crf: int | None = None
     max_dimension: int | None = None
+    video_codec: str = "h264"
 
 
 @dataclass(frozen=True, slots=True)
@@ -721,26 +723,76 @@ class _VideoOptimizer(_MediaOptimizer):
                 "-y",
                 str(destination),
             ]
-        preset = request.video_preset
-        if preset not in self._VIDEO_PRESETS:
-            raise InvalidRequestError(f"Unsupported video preset: {preset}")
-        crf = request.video_crf if request.video_crf is not None else 23
-        if not 0 <= crf <= 51:
-            raise InvalidRequestError("Video CRF must be between 0 and 51")
+        codec_args = self._codec_args(request)
         return [
             *base,
-            "-c:v",
-            "libx264",
-            "-preset",
-            preset,
-            "-crf",
-            str(crf),
+            *codec_args,
             "-c:a",
             "copy",
             "-movflags",
             "+faststart",
             "-y",
             str(destination),
+        ]
+
+    _VIDEO_CODECS: ClassVar[frozenset[str]] = frozenset(
+        {"h264", "hevc", "av1", "h264-hw", "hevc-hw"}
+    )
+
+    def _codec_args(self, request: MediaOptimizationRequest) -> list[str]:
+        """Return encoder arguments for the requested video codec.
+
+        ``h264`` (libx264), ``hevc`` (libx265) and ``av1`` (libsvtav1) honor
+        ``video_crf``; the ``-hw`` variants use macOS VideoToolbox and take a
+        quality percentage derived from CRF.
+        """
+        codec = request.video_codec
+        if codec not in self._VIDEO_CODECS:
+            raise InvalidRequestError(f"Unsupported video codec: {codec}")
+        preset = request.video_preset
+        if preset not in self._VIDEO_PRESETS:
+            raise InvalidRequestError(f"Unsupported video preset: {preset}")
+        if codec in {"h264-hw", "hevc-hw"}:
+            if sys.platform != "darwin":
+                raise InvalidRequestError(
+                    f"Hardware codec {codec} requires macOS VideoToolbox"
+                )
+            encoder = "h264_videotoolbox" if codec == "h264-hw" else "hevc_videotoolbox"
+            # VideoToolbox has no CRF/quality mode; map CRF onto a bitrate.
+            crf = request.video_crf if request.video_crf is not None else 23
+            quality = min(100, max(1, 100 - crf))
+            bitrate_kbps = quality * (80 if codec == "h264-hw" else 50)
+            return ["-c:v", encoder, "-b:v", f"{bitrate_kbps}k"]
+        crf = request.video_crf
+        if codec == "h264":
+            crf = 23 if crf is None else crf
+            if not 0 <= crf <= 51:
+                raise InvalidRequestError("Video CRF must be between 0 and 51")
+            return ["-c:v", "libx264", "-preset", preset, "-crf", str(crf)]
+        if codec == "hevc":
+            crf = 28 if crf is None else crf
+            if not 0 <= crf <= 51:
+                raise InvalidRequestError("HEVC CRF must be between 0 and 51")
+            return [
+                "-c:v",
+                "libx265",
+                "-preset",
+                preset,
+                "-crf",
+                str(crf),
+                "-tag:v",
+                "hvc1",
+            ]
+        crf = 30 if crf is None else crf
+        if not 0 <= crf <= 63:
+            raise InvalidRequestError("AV1 CRF must be between 0 and 63")
+        return [
+            "-c:v",
+            "libsvtav1",
+            "-crf",
+            str(crf),
+            "-preset",
+            "6",
         ]
 
 

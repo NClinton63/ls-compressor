@@ -1,6 +1,7 @@
 """Unit tests for the media optimization core."""
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -62,7 +63,7 @@ def _make_heic(path: Path, *, width: int = 64, height: int = 64) -> None:
     image.save(path, format="HEIF")
 
 
-def _make_video(path: Path) -> None:
+def _make_video(path: Path, size: str = "32x32") -> None:
     """Write a tiny MP4 video using FFmpeg."""
     try:
         from imageio_ffmpeg import get_ffmpeg_exe
@@ -77,7 +78,7 @@ def _make_video(path: Path) -> None:
         "-f",
         "lavfi",
         "-i",
-        "color=c=blue:s=32x32:d=0.1",
+        f"color=c=blue:s={size}:d=0.1",
         "-pix_fmt",
         "yuv420p",
         "-y",
@@ -452,3 +453,95 @@ class TestVideoTranscode:
         )
         assert result.integrity_verified
         assert result.media_format is MediaFormat.GIF
+
+
+class TestVideoCodecs:
+    def test_hevc_roundtrip(self, tmp_path: Path) -> None:
+        # libx265 aborts on sub-64px frames; use a larger source.
+        source = tmp_path / "in.mp4"
+        _make_video(source, size="128x96")
+        destination = tmp_path / "out.mp4"
+        result = optimize_media(
+            MediaOptimizationRequest(
+                source=source,
+                destination=destination,
+                video_codec="hevc",
+            )
+        )
+        assert result.integrity_verified
+
+    def test_av1_roundtrip(self, tmp_path: Path) -> None:
+        source = tmp_path / "in.mp4"
+        _make_video(source, size="128x96")
+        destination = tmp_path / "out.mp4"
+        result = optimize_media(
+            MediaOptimizationRequest(
+                source=source,
+                destination=destination,
+                video_codec="av1",
+                video_crf=45,
+            )
+        )
+        assert result.integrity_verified
+
+    def test_unknown_codec_rejected(self, video_file: Path, tmp_path: Path) -> None:
+        source = video_file
+        with pytest.raises(InvalidRequestError, match="Unsupported video codec"):
+            optimize_media(
+                MediaOptimizationRequest(
+                    source=source,
+                    destination=tmp_path / "o.mp4",
+                    video_codec="vp8",
+                )
+            )
+
+    def test_hw_codec_rejected_off_macos(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr("ls_compressor.core.media.sys.platform", "linux")
+        source = tmp_path / "in.mp4"
+        source.write_bytes(b"\x00")
+        with pytest.raises(InvalidRequestError, match="VideoToolbox"):
+            optimize_media(
+                MediaOptimizationRequest(
+                    source=source,
+                    destination=tmp_path / "o.mp4",
+                    video_codec="h264-hw",
+                )
+            )
+
+    @pytest.mark.skipif(sys.platform != "darwin", reason="VideoToolbox-only")
+    def test_hw_h264_roundtrip_when_supported(self, tmp_path: Path) -> None:
+        """VideoToolbox needs a minimum frame size; skip if init fails."""
+        import subprocess
+
+        from imageio_ffmpeg import get_ffmpeg_exe
+
+        source = tmp_path / "in.mp4"
+        subprocess.run(
+            [
+                get_ffmpeg_exe(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x480:duration=0.3:rate=15",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
+                str(source),
+            ],
+            check=True,
+        )
+        destination = tmp_path / "out.mp4"
+        try:
+            result = optimize_media(
+                MediaOptimizationRequest(
+                    source=source,
+                    destination=destination,
+                    video_codec="h264-hw",
+                )
+            )
+        except CompressionError:
+            pytest.skip("VideoToolbox unavailable in this environment")
+        assert result.integrity_verified

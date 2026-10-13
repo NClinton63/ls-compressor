@@ -221,9 +221,13 @@ resampling; images already within the limit pass through untouched.
 **Tunables** (`MediaOptimizationRequest`):
 
 - `quality` (1–100) for JPEG/WebP lossy output.
-- `video_preset` — FFmpeg x264 preset (`ultrafast` … `veryslow`, default
+- `video_preset` — FFmpeg x264/x265 preset (`ultrafast` … `veryslow`, default
   `medium`).
-- `video_crf` — x264 CRF 0–51 (lower = higher quality).
+- `video_crf` — CRF (lower = higher quality): 0–51 for h264/hevc, 0–63 for
+  av1. For VideoToolbox codecs it maps to a target bitrate instead.
+- `video_codec` — `h264` (libx264, default), `hevc` (libx265, tagged `hvc1`
+  for Apple compatibility), `av1` (libsvtav1), or the macOS-only hardware
+  encoders `h264-hw`/`hevc-hw` (VideoToolbox).
 
 Results report the detected `MediaFormat`, compression ratio, and savings
 percentage, with the same progress-callback contract as archive operations.

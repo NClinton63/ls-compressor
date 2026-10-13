@@ -18,6 +18,10 @@ from ls_compressor.core.exceptions import (
     InvalidRequestError,
     UnsupportedFormatError,
 )
+from ls_compressor.core.export_packs import (
+    generate_scale_pack,
+    generate_srcset,
+)
 from ls_compressor.core.icons import generate_icon_pack
 from ls_compressor.core.listing import (
     ArchiveEntry,
@@ -94,6 +98,8 @@ __all__ = [
     "extract_payload",
     "format_listing",
     "generate_icon_pack",
+    "generate_scale_pack",
+    "generate_srcset",
     "is_encrypted_file",
     "is_self_extracting_archive",
     "is_volume",

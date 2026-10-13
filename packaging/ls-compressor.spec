@@ -71,6 +71,7 @@ a = Analysis(
         "fontTools.subset",
         "fontTools.ttLib.woff2",
         "brotli",
+        "pymupdf",
         "zstandard",
         "zstandard.backend_cffi",
         "argon2",

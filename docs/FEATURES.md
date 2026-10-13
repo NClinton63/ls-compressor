@@ -275,6 +275,19 @@ selects the output flavor; existing files require `--force`.
 
 CLI: `font SRC DEST.woff2 [--subset "Hello World"] [--subset-file chars.txt] [-f]`
 
+### PDF conversion
+
+`core/pdf.py` covers both directions:
+
+- `images_to_pdf(sources, dest.pdf)` — Pillow multi-page PDF; alpha/palette
+  modes flatten to RGB.
+- `pdf_to_images(src.pdf, dir)` — PyMuPDF page rasterizer writing
+  `{stem}-p{n}.png|jpeg|webp` at a configurable `--dpi` (20–600, default
+  150). The `pymupdf` dependency is optional at import time; without it the
+  function raises `UnsupportedFormatError`.
+
+CLI: `pdf img1.png img2.png out.pdf` or `pdf in.pdf pages_dir --format jpeg --dpi 300`.
+
 ---
 
 ## 4. Watch folders (Hot Folders)

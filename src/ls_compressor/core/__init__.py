@@ -50,6 +50,7 @@ from ls_compressor.core.models import (
 from ls_compressor.core.palette import extract_palette
 from ls_compressor.core.passwords import PasswordStrength, password_strength
 from ls_compressor.core.progress import ProgressCallback, ProgressReporter
+from ls_compressor.core.rename import RenameItem, apply_renames, plan_renames
 from ls_compressor.core.verification import (
     detect_algorithm,
     verify_against_source,
@@ -87,8 +88,10 @@ __all__ = [
     "PlanMember",
     "ProgressCallback",
     "ProgressReporter",
+    "RenameItem",
     "UnsupportedFormatError",
     "WatermarkPosition",
+    "apply_renames",
     "apply_watermark",
     "compress",
     "create_self_extracting_archive",
@@ -112,6 +115,7 @@ __all__ = [
     "parse_size",
     "password_strength",
     "plan_compression",
+    "plan_renames",
     "read_encrypted_extension",
     "self_extracting_extension",
     "split_archive",

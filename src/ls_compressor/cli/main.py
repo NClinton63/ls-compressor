@@ -285,6 +285,31 @@ def build_parser(
     )
     _add_json_option(watermark_parser)
 
+    rename_parser = subparsers.add_parser(
+        "rename", help="bulk-rename files with a token pattern"
+    )
+    rename_parser.add_argument("paths", nargs="+", type=Path, help="files to rename")
+    rename_parser.add_argument(
+        "--pattern",
+        required=True,
+        help="template with {stem} {ext} {index} {parent} tokens",
+    )
+    rename_parser.add_argument(
+        "--start",
+        type=int,
+        default=1,
+        help="first value for {index} (default 1)",
+    )
+    rename_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the plan without renaming",
+    )
+    rename_parser.add_argument(
+        "--force", "-f", action="store_true", help="overwrite existing names"
+    )
+    _add_json_option(rename_parser)
+
     watch_parser = subparsers.add_parser(
         "watch", help="monitor a folder and process new files automatically"
     )
@@ -905,6 +930,33 @@ def _run(args: argparse.Namespace) -> None:
             _emit_json({"command": "watermark", "output": str(result_path)})
         else:
             print(f"Watermarked: {result_path}")
+        return
+
+    if args.command == "rename":
+        from ls_compressor.core.rename import apply_renames, plan_renames
+
+        items = plan_renames(list(args.paths), args.pattern, args.start)
+        if not args.dry_run:
+            apply_renames(items, overwrite=args.force)
+        _LOGGER.info("Operation succeeded command=%s", args.command)
+        if args.json:
+            _emit_json(
+                {
+                    "command": "rename",
+                    "dry_run": args.dry_run,
+                    "renames": [
+                        {
+                            "from": str(item.source),
+                            "to": str(item.destination),
+                        }
+                        for item in items
+                    ],
+                }
+            )
+        else:
+            verb = "Would rename" if args.dry_run else "Renamed"
+            for item in items:
+                print(f"{verb}: {item.source} -> {item.destination.name}")
         return
 
     if args.command == "watch":

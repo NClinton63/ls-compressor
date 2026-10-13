@@ -389,3 +389,66 @@ class TestOptimizeVideo:
         )
         with pytest.raises(InvalidRequestError):
             optimize_media(request)
+
+
+def _make_test_video(path: Path) -> None:
+    """Create a small test video via FFmpeg."""
+    import subprocess
+
+    from imageio_ffmpeg import get_ffmpeg_exe
+
+    subprocess.run(
+        [
+            get_ffmpeg_exe(),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=128x96:duration=0.5:rate=15",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+            str(path),
+        ],
+        check=True,
+    )
+
+
+class TestVideoTranscode:
+    def test_video_to_gif(self, tmp_path: Path):
+        source = tmp_path / "in.mp4"
+        _make_test_video(source)
+        destination = tmp_path / "out.gif"
+        result = optimize_media(
+            MediaOptimizationRequest(source=source, destination=destination)
+        )
+        assert result.integrity_verified
+        with Image.open(destination) as image:
+            assert image.format == "GIF"
+            assert getattr(image, "n_frames", 1) > 1
+
+    def test_video_to_animated_webp(self, tmp_path: Path):
+        source = tmp_path / "in.mp4"
+        _make_test_video(source)
+        destination = tmp_path / "out.webp"
+        result = optimize_media(
+            MediaOptimizationRequest(source=source, destination=destination)
+        )
+        assert result.integrity_verified
+        with Image.open(destination) as image:
+            assert image.format == "WEBP"
+            assert getattr(image, "n_frames", 1) > 1
+
+    def test_gif_to_mp4(self, tmp_path: Path):
+        source = tmp_path / "in.mp4"
+        _make_test_video(source)
+        gif = tmp_path / "in.gif"
+        optimize_media(MediaOptimizationRequest(source=source, destination=gif))
+        destination = tmp_path / "out.mp4"
+        result = optimize_media(
+            MediaOptimizationRequest(source=gif, destination=destination)
+        )
+        assert result.integrity_verified
+        assert result.media_format is MediaFormat.GIF

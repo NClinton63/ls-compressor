@@ -241,6 +241,16 @@ ZIP packs (never overwriting an existing destination):
 
 CLI: `pack SRC DEST.zip --type scale|srcset [--width N]` (`--json` supported).
 
+### Watermarking
+
+`core/watermark.py` stamps text onto raster images — anchored at any corner
+or center, or tiled diagonally at -30° across the whole image. Font size
+scales with the image (~5% of the shortest edge); opacity is configurable.
+JPEG destinations flatten to RGB automatically; existing files are never
+overwritten without `overwrite`/`--force`.
+
+CLI: `watermark SRC DEST --text "© Acme" [--position tile|center|top-left|…] [--opacity 0.4] [-f]`
+
 ---
 
 ## 4. Watch folders (Hot Folders)

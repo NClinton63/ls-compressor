@@ -96,6 +96,7 @@ class MediaOptimizationRequest:
     overwrite: bool = False
     video_preset: str = "medium"
     video_crf: int | None = None
+    max_dimension: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,7 +257,7 @@ def optimize_media(
     try:
         output_format = _destination_format(request.destination, media_format)
         optimizer.optimize(request, temporary, output_format, progress)
-        integrity_verified = optimizer.verify(request.source, temporary)
+        integrity_verified = optimizer.verify(request, temporary)
         replace_path(temporary, request.destination, overwrite=request.overwrite)
         progress.complete(request.destination)
     except CompressionError:
@@ -342,7 +343,7 @@ class _MediaOptimizer(ABC):
         """Optimize the source media and write it to destination."""
 
     @abstractmethod
-    def verify(self, source: Path, destination: Path) -> bool:
+    def verify(self, request: MediaOptimizationRequest, destination: Path) -> bool:
         """Return True if the optimized output can be successfully read."""
 
 
@@ -373,6 +374,7 @@ class _ImageOptimizer(_MediaOptimizer):
         with Image.open(request.source) as image:
             progress.advance(0, request.source)
             image = self._normalize_mode(image, output_format)
+            image = self._resize(image, request.max_dimension)
             save_kwargs = self._save_kwargs(
                 request,
                 output_format,
@@ -383,14 +385,15 @@ class _ImageOptimizer(_MediaOptimizer):
             )
         progress.advance(request.source.stat().st_size, request.source)
 
-    def verify(self, source: Path, destination: Path) -> bool:
-        """Confirm the output image can be opened and has matching dimensions."""
+    def verify(self, request: MediaOptimizationRequest, destination: Path) -> bool:
+        """Confirm the output image can be opened and has expected dimensions."""
         try:
             with (
-                Image.open(source) as source_image,
+                Image.open(request.source) as source_image,
                 Image.open(destination) as output_image,
             ):
-                return source_image.size == output_image.size
+                expected = self._resize(source_image, request.max_dimension)
+                return expected.size == output_image.size
         except Exception as error:
             _LOGGER.warning("Image verification failed: %s", error)
             return False
@@ -417,6 +420,21 @@ class _ImageOptimizer(_MediaOptimizer):
         if image.mode in {"CMYK", "I;16", "I", "F"}:
             return image.convert("RGB")
         return image
+
+    @staticmethod
+    def _resize(image: Image.Image, max_dimension: int | None) -> Image.Image:
+        """Downscale an image so its longest edge fits max_dimension."""
+        if max_dimension is None or max_dimension <= 0:
+            return image
+        longest = max(image.size)
+        if longest <= max_dimension:
+            return image
+        scale = max_dimension / longest
+        size = (
+            max(1, round(image.width * scale)),
+            max(1, round(image.height * scale)),
+        )
+        return image.resize(size, Image.Resampling.LANCZOS)
 
     @staticmethod
     def _save_kwargs(
@@ -492,7 +510,7 @@ class _VideoOptimizer(_MediaOptimizer):
             request.source,
         )
 
-    def verify(self, source: Path, destination: Path) -> bool:
+    def verify(self, request: MediaOptimizationRequest, destination: Path) -> bool:
         """Confirm the output video can be probed by FFmpeg."""
         try:
             from imageio_ffmpeg import get_ffmpeg_exe

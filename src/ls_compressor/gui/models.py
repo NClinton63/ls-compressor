@@ -47,6 +47,7 @@ class GuiJob:
     media_quality: int | None = None
     video_preset: str = "medium"
     video_crf: int | None = None
+    media_max_dimension: int | None = None
     password: str | None = None
     self_extracting: bool = False
     encryption_format: EncryptionFormat = EncryptionFormat.LSE

@@ -199,6 +199,12 @@ def build_parser(
         help="FFmpeg x264 CRF (0-51, lower is higher quality)",
     )
     media_parser.add_argument(
+        "--max-size",
+        type=int,
+        metavar="PX",
+        help="downscale images so the longest edge fits PX pixels",
+    )
+    media_parser.add_argument(
         "--force", "-f", action="store_true", help="overwrite existing output"
     )
     media_parser.add_argument(
@@ -675,6 +681,7 @@ def _run(args: argparse.Namespace) -> None:
                 overwrite=args.force,
                 video_preset=args.video_preset,
                 video_crf=args.video_crf,
+                max_dimension=args.max_size,
             ),
             callback,
         )

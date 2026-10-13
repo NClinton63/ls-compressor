@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -380,11 +381,17 @@ class MediaPage(_Page):
         self._mode_combo.currentIndexChanged.connect(
             lambda _index: self.mode_changed.emit()
         )
+        self._max_size = QSpinBox(self)
+        self._max_size.setRange(0, 65536)
+        self._max_size.setSpecialValueText("Original size")
+        self._max_size.setSuffix(" px")
+        self._max_size.setToolTip("Constrain the longest image edge (0 keeps size)")
         self._run_button = QPushButton("Optimize")
         self._run_button.setObjectName("optimizeButton")
         self._run_button.setProperty("variant", "primary")
         self._run_button.clicked.connect(self.run_clicked.emit)
         controls.addWidget(self._mode_combo)
+        controls.addWidget(self._max_size)
         controls.addWidget(self._run_button)
         return controls
 
@@ -402,6 +409,10 @@ class MediaPage(_Page):
     def selected_mode(self) -> MediaOptimizationMode:
         value = self._mode_combo.currentData()
         return MediaOptimizationMode(value) if value else MediaOptimizationMode.LOSSLESS
+
+    def selected_max_dimension(self) -> int | None:
+        value = self._max_size.value()
+        return value if value > 0 else None
 
     def set_mode(self, mode: MediaOptimizationMode) -> None:
         index = self._mode_combo.findData(mode.value)
@@ -776,6 +787,7 @@ class MainWindow(QMainWindow):
                     source=source,
                     destination=destination,
                     media_mode=self._optimize_page.selected_mode(),
+                    media_max_dimension=self._optimize_page.selected_max_dimension(),
                 )
                 table.convert_row_to_job(
                     row, job_id, kind, destination, media_format=MediaFormat.PNG

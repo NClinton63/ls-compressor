@@ -1,5 +1,6 @@
 """Unit tests for AES-256-GCM archive encryption and self-extracting launchers."""
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +19,12 @@ from ls_compressor.core import (
     is_self_extracting_archive,
 )
 from ls_compressor.core.algorithms import CompressionAlgorithm as Algorithm
-from ls_compressor.core.encryption import derive_key
+from ls_compressor.core.encryption import (
+    NONCE_LEN,
+    SALT_LEN,
+    derive_key,
+    derive_key_argon2id,
+)
 from ls_compressor.core.models import CompressionRequest, DecompressionRequest
 
 PASSWORD = "correct horse battery staple"
@@ -387,3 +393,85 @@ def test_self_extracting_requires_lse_container(tmp_path: Path) -> None:
                 encryption_format=EncryptionFormat.ZIP_AES,
             )
         )
+
+
+class TestWebInterop:
+    """LSE containers produced by the web platform's lib/lse.ts."""
+
+    @staticmethod
+    def _web_pack(metadata: dict, salt: bytes, nonce: bytes) -> bytes:
+        """Pack a header exactly as lse.ts packHeader() does."""
+        meta = json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode()
+        return b"LSE\x01" + len(meta).to_bytes(2, "big") + meta + salt + nonce
+
+    def test_web_argon2id_archive_decrypts(self, tmp_path: Path) -> None:
+        """A web-produced argon2id LSE file decrypts on the desktop."""
+        import os
+
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        payload = b"web-encrypted archive bytes"
+        salt = os.urandom(SALT_LEN)
+        nonce = os.urandom(NONCE_LEN)
+        metadata = {
+            "ext": ".zip",
+            "kdf": {
+                "algo": "argon2id",
+                "memory_cost": 65_536,
+                "parallelism": 2,
+                "time_cost": 3,
+            },
+        }
+        key = derive_key_argon2id(
+            PASSWORD, salt, time_cost=3, memory_cost=65_536, parallelism=2
+        )
+        ciphertext = AESGCM(key).encrypt(nonce, payload, None)
+        archive = tmp_path / "web.lsenc"
+        archive.write_bytes(self._web_pack(metadata, salt, nonce) + ciphertext)
+
+        restored = tmp_path / "out.zip"
+        decrypt_archive(archive, restored, PASSWORD)
+
+        assert restored.read_bytes() == payload
+
+    def test_web_pbkdf2_archive_without_iterations_decrypts(
+        self, tmp_path: Path
+    ) -> None:
+        """Web PBKDF2 archives may omit iterations; fall back to the default."""
+        import os
+
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        payload = b"web pbkdf2 payload"
+        salt = os.urandom(SALT_LEN)
+        nonce = os.urandom(NONCE_LEN)
+        metadata = {"kdf": {"algo": "pbkdf2-sha256"}}
+        ciphertext = AESGCM(derive_key(PASSWORD, salt)).encrypt(nonce, payload, None)
+        archive = tmp_path / "web-legacy.lsenc"
+        archive.write_bytes(self._web_pack(metadata, salt, nonce) + ciphertext)
+
+        restored = tmp_path / "out.bin"
+        decrypt_archive(archive, restored, PASSWORD)
+
+        assert restored.read_bytes() == payload
+
+    def test_desktop_archive_matches_web_layout(self, tmp_path: Path) -> None:
+        """A desktop-produced LSE header parses per the web spec."""
+        plain = tmp_path / "a.zip"
+        plain.write_bytes(b"PK fake archive")
+        encrypted = tmp_path / "a.lsenc"
+        encrypt_archive(plain, encrypted, PASSWORD)
+
+        data = encrypted.read_bytes()
+        assert data[:4] == b"LSE\x01"
+        meta_len = int.from_bytes(data[4:6], "big")
+        metadata = json.loads(data[6 : 6 + meta_len])
+        assert metadata["kdf"]["algo"] == "argon2id"
+        salt = data[6 + meta_len : 6 + meta_len + SALT_LEN]
+        nonce = data[6 + meta_len + SALT_LEN : 6 + meta_len + SALT_LEN + NONCE_LEN]
+        assert len(salt) == SALT_LEN and len(nonce) == NONCE_LEN
+        ciphertext = data[6 + meta_len + SALT_LEN + NONCE_LEN :]
+        key = derive_key_argon2id(PASSWORD, salt)
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        assert AESGCM(key).decrypt(nonce, ciphertext, None) == b"PK fake archive"
